@@ -6,7 +6,7 @@
      Library are the same editor with those bits absent (and they can
      be turned on). Apps is a hub too — a drawer whose content is the
      generated registry grid. */
-  import { app, ownedActivities, roomIds, schedulePreview, renameScreen, deleteScreen, setStatus, subordinateScreens, isControllerScreen, confirmPageDraft, discardPageDraft, stampHost, snippetsOf, presetSnippetTile } from "../state.svelte.js";
+  import { app, ownedActivities, roomIds, schedulePreview, renameScreen, deleteScreen, duplicateScreen, setStatus, subordinateScreens, isControllerScreen, confirmPageDraft, discardPageDraft, stampHost, snippetsOf, presetSnippetTile } from "../state.svelte.js";
   import { fillControlTargetDefaults, tunerOn, setTuner } from "../stocklib.js";
   import Field from "../components/Field.svelte";
   import InfoPop from "../components/InfoPop.svelte";
@@ -21,12 +21,14 @@
   import SectionFold from "../components/SectionFold.svelte";
   import UploadBtn from "../components/UploadBtn.svelte";
   import SectionHeader from "../components/SectionHeader.svelte";
+  import SectionLayoutFields from "../components/SectionLayoutFields.svelte";
   import Segmented from "../components/Segmented.svelte";
   import SourceChip from "../components/SourceChip.svelte";
   import NumberField from "../components/NumberField.svelte";
   import TileRow from "../components/TileRow.svelte";
   import PageSettings from "./PageSettings.svelte";
   import Button from "../components/Button.svelte";
+  import { tabletOnly as tabletOnlyOf } from "../layout.js";
 
   let { screenId } = $props();
   const d = $derived(app.draft);
@@ -35,8 +37,28 @@
   /* owner room = it appears in roomIds (the rooms-overview hub is a
      room-scope hub but owns no activities) */
   const isOwnerRoom = $derived(roomIds().includes(screenId));
-  const owned = $derived(ownedActivities(screenId));
+  /* BORROWED ACTIVITIES (0.88, Duplicate page): a copy of a room page
+     keeps the activities band's `room` on the ORIGINAL, so the engine
+     shows the original's activities there. The editor lists the same
+     ones, read here, and sends "add" back to the owner. */
+  const actRoom = $derived.by(() => {
+    const t = roleSection("activities")?.s?.tiles?.find((x) => x?.type === "activities");
+    return t?.room && t.room !== screenId && d?.screens?.[t.room] ? t.room : null;
+  });
+  const owned = $derived(ownedActivities(actRoom || screenId));
   const edit = () => schedulePreview();
+  /* 0.88: a wall-only page (Shown on: tablets only) hides the remote
+     tile size everywhere and counts in `wide_columns`; the Width
+     picker's declared count follows the engine's secDecl on the wall
+     (section wide_columns → page wide_columns → section tile size →
+     page tile size) */
+  const tabletOnly = $derived(tabletOnlyOf(scr));
+  const declFor = (sec) => {
+    const sw = parseInt(sec?.wide_columns), pw = parseInt(scr?.grid?.wide_columns);
+    if (sw > 0) return sw;
+    if (pw > 0) return pw;
+    return sec?.columns || scr?.grid?.columns || 2;
+  };
   const KEYS = ["up", "down", "left", "right", "select", "back", "home", "power",
     "menu", "vol_up", "vol_down", "mute", "ch_up", "ch_down"];
 
@@ -180,6 +202,12 @@
     tiles.push({ type: "nav", id: "tile_" + Math.random().toString(36).slice(2, 6),
       label: "New nav", icon: "material:layers" });
   }
+  /* SPACER (0.88): empty columns in a section — draws nothing on the
+     remote, never focused; a one-column gap by default, widen it on
+     its row */
+  function newSpacer(tiles) {
+    tiles.push({ type: "spacer", id: "tile_" + Math.random().toString(36).slice(2, 6), span: 1 });
+  }
   function newPresetTile(tiles) {
     /* a PRESET: one-touch shortcut — pick what it does on its card */
     tiles.push({ type: "preset", id: "tile_" + Math.random().toString(36).slice(2, 6),
@@ -209,9 +237,14 @@
     if (scr.banner.enabled === false) delete scr.banner.enabled;
     else scr.banner.enabled = false;
   }
+  const SIZE_WORD = { 1: "large", 2: "medium", 3: "small", 4: "tiny" };
   const secSummary = (s) =>
-    ((s?.columns ?? scr?.grid?.columns ?? 2)) + " cols" +
-    (s?.columns ? "" : " · from page");
+    (tabletOnly
+      ? declFor(s) + " columns" + (s?.wide_columns ? "" : " · from page")
+      : (SIZE_WORD[s?.columns ?? scr?.grid?.columns ?? 2] || "medium") + " tiles" +
+        (s?.columns ? "" : " · from page") +
+        (s?.wide_columns ? " · " + s.wide_columns + " on the wall" : "")) +
+    (s?.row === "join" ? (s.keep === false ? " · flows on" : " · joins the row") : "");
   let secSet = $state({});            // which settings strips are open
   /* ACCORDION (v0.43.6): editor-only folds per section — never
      written to config; reverting the treatment = SectionHeader's
@@ -363,9 +396,16 @@
           (pgOpen ? "border-accent/60 bg-accent-wash text-accent-text"
             : "border-line-strong bg-surface text-ink-2 hover:bg-sunk")}
         onclick={() => (pgOpen = !pgOpen)}>Page settings</button>
+      <!-- DUPLICATE (0.88): the door to a wall board — copy this page,
+           mark the copy wall-only, give it its columns -->
+      <button class="cursor-pointer rounded-[6px] border border-line-strong bg-surface px-2.5 py-[7px] text-[11px] font-medium text-ink-2 hover:bg-sunk"
+        title="Copy this page (tiles and settings) as a new page placed right after it — the way to start a wall board from a room page"
+        onclick={() => duplicateScreen(screenId)}>Duplicate page</button>
       {#if !pgOpen}
         <span class="text-[11px] text-dim">
-          {(scr.grid?.columns ?? 2) + " cols"} · {keysCount()} keys bound
+          {tabletOnly
+            ? (scr.grid?.wide_columns ? scr.grid.wide_columns + " cols on the wall" : "wall-only")
+            : (scr.grid?.columns ?? 2) + " cols" + (scr.grid?.wide_columns ? " · " + scr.grid.wide_columns + " on the wall" : "")} · {keysCount()} keys bound
         </span>
       {/if}
     </div>
@@ -440,11 +480,10 @@
           <Field label="Jump label" hint="this section's shortcut name — it becomes a tappable chip in the page's hero AND a stop the CH ▲▼ keys jump to; blank = no chip, and CH jumping skips this section">
             <Input value={sec.hero_label ?? ""} onchange={(e) => { if (e.target.value.trim()) sec.hero_label = e.target.value.trim(); else delete sec.hero_label; }} />
           </Field>
-          <Field label="Grid columns" hint="inherit uses the page's grid">
-            <Segmented value={sec.columns ?? 0}
-              options={[{ value: 0, label: "inherit" }, 1, 2, 3, 4]}
-              onchange={(v) => { if (v) sec.columns = v; else delete sec.columns; }} />
-          </Field>
+          <!-- LAYOUT (0.88, tablet-layout.md §5): tile size (the old
+               "Grid columns", now named for what it is) and the row
+               rule — one shared component for every section kind -->
+          <SectionLayoutFields {sec} {scr} {tabletOnly} onchange={edit} />
           <!-- SECTION STYLE DEFAULTS (v0.85.7 — "so it applies to all
                devices unless overridden"): every card in this section
                inherits these unless it states its own on its Styling
@@ -546,9 +585,12 @@
       onToggle={() => toggleRoleSec("activities", "Activities")}
       gridSummary={roleSection("activities") ? secSummary(roleSection("activities").s) : ""}
       bind:settingsOpen={() => secSet.acts ?? false, (v) => (secSet.acts = v)}
-      addLabel="＋ Add activity" onAdd={addActivity}
+      addLabel={actRoom ? "" : "＋ Add activity"} onAdd={actRoom ? null : addActivity}
       bind:collapsed={() => secFold.acts ?? false, (v) => (secFold.acts = v)}>
       {#if secSet.acts}{@render secSettings(roleSection("activities")?.s)}{/if}
+      {#if actRoom}
+        <p class="m-0 text-xs text-dim">These are <b>{d.screens[actRoom]?.name || actRoom}</b>'s activities — this page shows them (it was copied from there). Add or remove activities on that page; edit them here or there.</p>
+      {/if}
       <div class={"space-y-3 " + (roleSection("activities") && !secEnabled(roleSection("activities").s) ? "opacity-50" : "")}>
         {#each owned as id, i (id)}
           <div bind:this={actEls[id]}>
@@ -603,7 +645,7 @@
         {@const rs = roleSection("presets")}
         <div class={"space-y-2 " + (secEnabled(rs.s) ? "" : "opacity-50")}>
           {#each rs.s.tiles as tile, ti (ti)}
-            <TileRow {tile} ownerScreen={screenId} tiles={rs.s.tiles} index={ti} castEnts={pageCastEnts} />
+            <TileRow {tile} ownerScreen={screenId} tiles={rs.s.tiles} index={ti} castEnts={pageCastEnts} declCols={declFor(rs.s)} />
           {:else}
             <p class="m-0 text-xs text-dim">No presets yet — a preset is a one-touch shortcut (Netflix, a playlist, lights at 30%).</p>
           {/each}
@@ -623,13 +665,14 @@
       onAdd={() => { if (!roleSection("devices")) addRoleSection("devices", "Devices"); newTile(roleSection("devices").s.tiles); }}
       add2Label="＋ Add nav"
       onAdd2={() => { if (!roleSection("devices")) addRoleSection("devices", "Devices"); newNavTile(roleSection("devices").s.tiles); }}
+      extraAdds={[{ label: "＋ Spacer", title: "an empty column — draws nothing on the remote", onclick: () => { if (!roleSection("devices")) addRoleSection("devices", "Devices"); newSpacer(roleSection("devices").s.tiles); } }]}
       bind:collapsed={() => secFold.devices ?? false, (v) => (secFold.devices = v)}>
       {#if secSet.devices}{@render secSettings(roleSection("devices")?.s)}{/if}
       {#if roleSection("devices")}
         {@const ds = roleSection("devices")}
         <div class={"space-y-2 " + (secEnabled(ds.s) ? "" : "opacity-50")}>
           {#each ds.s.tiles as tile, ti (ti)}
-            <TileRow {tile} ownerScreen={screenId} tiles={ds.s.tiles} index={ti} castEnts={pageCastEnts} />
+            <TileRow {tile} ownerScreen={screenId} tiles={ds.s.tiles} index={ti} castEnts={pageCastEnts} declCols={declFor(ds.s)} />
           {:else}
             <p class="m-0 text-xs text-dim">No devices yet — a device card controls one thing you own; a nav card opens another page (or another workspace).</p>
           {/each}
@@ -650,6 +693,7 @@
         bind:settingsOpen={() => secSet["c" + i] ?? false, (v) => (secSet["c" + i] = v)}
         addLabel="＋ Add device" onAdd={() => newTile(s.tiles)}
         add2Label="＋ Add nav" onAdd2={() => newNavTile(s.tiles)}
+        extraAdds={[{ label: "＋ Spacer", title: "an empty column — draws nothing on the remote", onclick: () => newSpacer(s.tiles) }]}
         bind:collapsed={() => secFold["c" + i] ?? false, (v) => (secFold["c" + i] = v)}>
         {#if secSet["c" + i]}
           {@render secSettings(s)}
@@ -660,7 +704,7 @@
         {/if}
         <div class={"space-y-2 " + (secEnabled(s) ? "" : "opacity-50")}>
           {#each s.tiles as tile, ti (ti)}
-            <TileRow {tile} ownerScreen={screenId} tiles={s.tiles} index={ti} castEnts={pageCastEnts} />
+            <TileRow {tile} ownerScreen={screenId} tiles={s.tiles} index={ti} castEnts={pageCastEnts} declCols={declFor(s)} />
           {/each}
         </div>
       </SectionHeader>
@@ -670,10 +714,11 @@
         bind:settingsOpen={() => secSet.flat ?? false, (v) => (secSet.flat = v)}
         addLabel="＋ Add device" onAdd={() => newTile(scr.tiles)}
         add2Label="＋ Add nav" onAdd2={() => newNavTile(scr.tiles)}
+        extraAdds={[{ label: "＋ Spacer", title: "an empty column — draws nothing on the remote", onclick: () => newSpacer(scr.tiles) }]}
         bind:collapsed={() => secFold.flat ?? false, (v) => (secFold.flat = v)}>
         <div class="space-y-2">
           {#each scr.tiles as tile, ti (ti)}
-            <TileRow {tile} ownerScreen={screenId} tiles={scr.tiles} index={ti} castEnts={pageCastEnts} />
+            <TileRow {tile} ownerScreen={screenId} tiles={scr.tiles} index={ti} castEnts={pageCastEnts} declCols={declFor(null)} />
           {/each}
         </div>
       </SectionHeader>

@@ -15,9 +15,16 @@
   import NumberField from "../components/NumberField.svelte";
   import Input from "../components/Input.svelte";
 
+  import { tabletOnly as tabletOnlyOf, wallColsOf, wallWidthOf } from "../layout.js";
+
   let { screenId, keysCount } = $props();
   const d = $derived(app.draft);
   const scr = $derived(d?.screens?.[screenId]);
+  /* 0.88: a wall-only page hides the remote tile size; the wall
+     count's placeholder is what the engine would derive */
+  const tabletOnly = $derived(tabletOnlyOf(scr));
+  const wallW = $derived(wallWidthOf(d?.remotes, app.device));
+  const wallAuto = $derived(wallColsOf({ grid: { columns: scr?.grid?.columns, tile_width: scr?.grid?.tile_width } }, null, wallW));
   const isOwnerRoom = $derived(roomIds().includes(screenId));
   const owned = $derived(ownedActivities(screenId));
   const edit = () => schedulePreview();
@@ -133,14 +140,41 @@
 
         {#if pgTab === "layout"}
           <div class="flex flex-wrap items-start gap-6">
-            <Field label="Grid columns" hint="">
-              <div class="flex items-center gap-2">
-                <Segmented value={scr.grid?.columns ?? 2} options={[1, 2, 3, 4]}
-                  onchange={(v) => { scr.grid = { ...(scr.grid || {}), columns: v }; edit(); }} />
-                <SourceChip source={scr.grid?.columns ? "here" : "workspace"}
-                  onreset={() => { if (scr.grid) { delete scr.grid.columns;
-                    if (!Object.keys(scr.grid).length) delete scr.grid; } edit(); }} />
-              </div>
+            <!-- COLUMNS (0.88): the remote's count is a tile SIZE (1–4
+                 at 480, the wall derives more); the wall's is the
+                 author's own number (wide_columns — Suresh: "I know
+                 this dashboard has 7 heaters, I want 7 columns"). A
+                 page shown only on wall tablets hides the remote size:
+                 it never draws there. -->
+            {#if !tabletOnly}
+              <Field label="Grid columns" hint="on the remote (480 wide) — a tile size; a wall derives its count from it unless told below">
+                <div class="flex items-center gap-2">
+                  <Segmented value={scr.grid?.columns ?? 2} options={[1, 2, 3, 4]}
+                    onchange={(v) => { scr.grid = { ...(scr.grid || {}), columns: v }; edit(); }} />
+                  <SourceChip source={scr.grid?.columns ? "here" : "workspace"}
+                    onreset={() => { if (scr.grid) { delete scr.grid.columns;
+                      if (!Object.keys(scr.grid).length) delete scr.grid; } edit(); }} />
+                </div>
+              </Field>
+              {#if scr.grid?.tile_width}
+                <!-- the page's explicit tile width (v0.68) — shown only
+                     when set, because it wins over the size on a wall -->
+                <Field label="Tile width" hint="an explicit width — wins over the size on a wall; blank lets the size decide">
+                  <NumberField min={60} max={1200} suffix="px" placeholder="auto"
+                    value={scr.grid.tile_width ?? ""}
+                    onchange={(v) => { const n = parseInt(v); if (n > 0) scr.grid.tile_width = n; else { delete scr.grid.tile_width; if (!Object.keys(scr.grid).length) delete scr.grid; } edit(); }} />
+                </Field>
+              {/if}
+            {/if}
+            <Field label="Columns on the wall" hint={tabletOnly
+                ? "this page is wall-only — say how many columns it has"
+                : "blank: the wall derives a count from the tile size (" + wallAuto + " at " + wallW + " wide)"}>
+              <NumberField min={1} max={24} suffix="cols" placeholder={tabletOnly ? String(wallAuto) : "auto"}
+                value={scr.grid?.wide_columns ?? ""}
+                onchange={(v) => { const n = parseInt(v);
+                  if (n > 0) scr.grid = { ...(scr.grid || {}), wide_columns: n };
+                  else if (scr.grid) { delete scr.grid.wide_columns; if (!Object.keys(scr.grid).length) delete scr.grid; }
+                  edit(); }} />
             </Field>
             <Field label="Tile height" hint="workspace-wide (theme)">
               <div class="flex items-center gap-2">
@@ -161,6 +195,43 @@
                     else delete d.theme["grid-gap"]; edit(); }} />
                 <SourceChip source={d.theme?.["grid-gap"] ? "here" : "theme"}
                   onreset={() => { delete d.theme["grid-gap"]; edit(); }} />
+              </div>
+            </Field>
+          </div>
+          <!-- PAGE KNOBS (0.88, tablet-layout.md §6): which remote views
+               list this page when paging, and the page's own word on
+               the focus ring (page → profile → theme) -->
+          <div class="flex flex-wrap items-start gap-6 border-t border-line pt-3">
+            <Field label="Shown on" hint="which remotes page to it (◀ ▶ / swipe). A nav tile or the Home key still reaches it anywhere — this is a filter, not a lock">
+              <div class="flex items-center gap-4">
+                {#each [["remote", "Remotes & phones"], ["tablet", "Wall tablets"]] as [v, l] (v)}
+                  <Switch checked={!Array.isArray(scr.surfaces) || scr.surfaces.includes(v)} label={l}
+                    onCheckedChange={(on) => {
+                      const all = ["remote", "tablet"];
+                      let cur = Array.isArray(scr.surfaces) ? scr.surfaces.slice() : all.slice();
+                      cur = on ? [...new Set([...cur, v])] : cur.filter((x) => x !== v);
+                      if (!cur.length) return;   /* shown nowhere is not a choice */
+                      if (all.every((x) => cur.includes(x))) delete scr.surfaces; else scr.surfaces = cur;
+                      edit(); }} />
+                {/each}
+              </div>
+            </Field>
+            <Field label="Focus ring" hint="this page only — inherit follows the remote profile, then the theme; Off is transparent, the cursor still works">
+              <div class="flex items-center gap-2">
+                <Select value={scr.focus_ring == null ? "" : (/^(off|none|false|0|no)$/i.test(String(scr.focus_ring)) ? "off" : "color")}
+                  onchange={(e) => { const v = e.target.value;
+                    if (!v) delete scr.focus_ring; else if (v === "off") scr.focus_ring = "off";
+                    else if (!scr.focus_ring || scr.focus_ring === "off") scr.focus_ring = "#ffb300";
+                    edit(); }}
+                  options={[{ value: "", label: "Inherit" }, { value: "off", label: "Off" }, { value: "color", label: "A color" }]}
+                  class="w-32" />
+                {#if scr.focus_ring && !/^(off|none|false|0|no)$/i.test(String(scr.focus_ring))}
+                  <input type="color" value={/^#[0-9a-f]{6}$/i.test(scr.focus_ring) ? scr.focus_ring : "#ffb300"}
+                    class="h-[34px] w-[44px] cursor-pointer rounded border border-line-strong bg-field p-0.5"
+                    onchange={(e) => { scr.focus_ring = e.target.value; edit(); }} />
+                  <Input value={scr.focus_ring} class="w-28 font-mono text-[12px]"
+                    onchange={(e) => { const v = e.target.value.trim(); if (v) scr.focus_ring = v; else delete scr.focus_ring; edit(); }} />
+                {/if}
               </div>
             </Field>
           </div>

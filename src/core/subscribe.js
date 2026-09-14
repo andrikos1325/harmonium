@@ -75,7 +75,10 @@ function tilesOf(sc) {
       /* round 8: generated children inherit the dressed parent's
          section defaults — mirrors the render.js walk exactly */
       expandTile(t).map(c => sectionDressTile(c, t))), [])
-    .map(surfDressTile).filter(visibleTile);
+    .map(surfDressTile).filter(visibleTile)
+    /* spacers (0.88) are layout, not tiles: nothing to focus, subscribe
+       or re-render — render.js places them itself */
+    .filter(t => t.type !== "spacer");
 }
 /* structural signature: generated tiles change when their source
    attribute does — renderStates re-renders the grid when this moves */

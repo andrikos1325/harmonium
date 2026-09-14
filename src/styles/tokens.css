@@ -38,6 +38,7 @@
     --accent: #ffb020;
     --accent-ink: #14181d;      /* ink on an accent fill */
     --on: #ffb020;              /* accent means active — one colour rule */
+    --on-w: 255, 176, 32;       /* its r,g,b triplet, for the active fill */
     --ok: #4ade80;              /* status · online */
     --wash: rgba(255,176,32,.10);
     --danger: #e05252;
@@ -197,6 +198,13 @@
        the whole tile needs less alpha than a bloom that fades out */
     --wash-a-tint: 0.15;    /* round 6: "still too strong" at .25 */
     --wash-a-tint-on: 0.25;
+    /* ACTIVE FILL alphas (0.88 phase 3 — theme/profile key
+       active-style: fill, html.active-fill): an on tile painted solid
+       in its identity colour, and the softer plain-accent fill for a
+       tile with no identity. wash-strength (a multiplier the engine
+       applies to the six wash alphas above) is the other knob. */
+    --fill-a: 0.85;
+    --fill-a-plain: 0.35;
     /* BLOOM GEOMETRY KNOBS (round 6 — "educate me on where can I
        play"): the activity bloom's ellipse and fade, and the preset
        pool's (fractions of the cell). Live in devtools, in a

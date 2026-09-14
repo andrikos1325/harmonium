@@ -42,7 +42,46 @@
       hint: "the shortcuts below — hiding the band keeps them saved" },
     { key: "devices", label: "Devices section", types: ["devices"],
       hint: "the cast lists itself at the bottom of the controller" },
+    /* 0.88 phase 2 (tablet-layout.md §8, ruling 3): the on-screen
+       remote is a band — the pad, OK, back/home/power on glass. It
+       shows on any remote WITHOUT a physical d-pad (phones and wall
+       tablets alike; the gate is the hardware, not the view) and
+       hides on a handset. Device keys (the dialect's catalog) joins
+       for the same reason: a switch, an order, a column. */
+    { key: "remote", label: "On-screen remote", types: ["dpad", "buttons"],
+      hint: "the d-pad, OK, back / home / power on glass — appears on remotes without a physical d-pad (phones, wall tablets); never on a handset" },
+    { key: "keys", label: "Device keys", types: ["keys"],
+      hint: "the dialect's key catalog as tiles" },
   ];
+  /* COLUMNS ON THE WALL (0.88 phase 2, ruling 1 — "(a) explicit
+     per-band column under a wide_columns count"): on a wide panel the
+     bands stand in 2–3 side-by-side stacks; each band names its
+     stack. Per activity, on the surface, beside band_order. Unnamed
+     bands stand in stack 1; the on-screen remote in the LAST stack —
+     mock-up 3 with no authoring. */
+  const stacks = $derived(+a?.surface?.wide_columns >= 2 ? Math.min(4, Math.round(+a.surface.wide_columns)) : 0);
+  function setStacks(v) {
+    const n = parseInt(v);
+    if (n >= 2) a.surface = { ...(a.surface || {}), wide_columns: n };
+    else if (a.surface) {
+      delete a.surface.wide_columns; delete a.surface.band_column;
+      if (!Object.keys(a.surface).length) delete a.surface;
+    }
+    schedulePreview();
+  }
+  const bandColumn = (k) => {
+    const v = +a?.surface?.band_column?.[k];
+    if (v >= 1 && v <= stacks) return v;
+    return k === "remote" ? stacks : 1;
+  };
+  function setBandColumn(k, v) {
+    const n = parseInt(v);
+    const bc = { ...(a.surface?.band_column || {}) };
+    if (n >= 1 && n !== (k === "remote" ? stacks : 1)) bc[k] = n; else delete bc[k];
+    a.surface = { ...(a.surface || {}), band_column: bc };
+    if (!Object.keys(bc).length) delete a.surface.band_column;
+    schedulePreview();
+  }
   const ctrlTileTypes = $derived.by(() => {
     const c = navCtrl?.c;
     const tt = new Set();
@@ -97,7 +136,7 @@
      default; "" = no label at all. Only single-tile bands take one —
      per-item bands (the volumes cast, presets, devices) keep their
      own names. */
-  const LABELABLE = new Set(["np", "transport", "modes", "volume", "sources", "speakers", "presets", "devices"]);
+  const LABELABLE = new Set(["np", "transport", "modes", "volume", "sources", "speakers", "presets", "devices", "remote"]);
   /* the placeholder tells the truth (v0.83.7 — "Volume Band. label is
      Blank but actually its ..."): what the band ACTUALLY says today,
      so the empty slot reads as "currently: X", not as "no label" */
@@ -110,6 +149,7 @@
     if (key === "transport") return byType("transport")?.label ?? "(hidden)";
     if (key === "modes") return byType("mediabtns")?.label ?? "(hidden)";
     if (key === "sources") return byType("sources")?.label ?? "Inputs";
+    if (key === "remote") return byType("dpad")?.label ?? "Remote";
     if (key === "volume") {
       const wired = a?.context?.volume;
       const dev = Object.entries(app.draft?.devices || {}).find(
@@ -283,6 +323,17 @@
           </div>
           <div class="rounded-[10px] border border-line bg-tile p-3">
             <span class="text-[11px] font-bold tracking-[.07em] text-dim uppercase">What this screen shows — for this activity</span>
+            <!-- ON THE WALL (0.88 phase 2): stacks, and each band's stack -->
+            <div class="mt-2 flex flex-wrap items-center gap-3 rounded-[8px] border border-line bg-surface px-3 py-2">
+              <span class="text-[11px] font-bold tracking-[.07em] text-dim uppercase">On the wall</span>
+              <Select value={String(stacks || 1)} class="w-44"
+                title="On a wide panel (a tablet) the bands stand side by side in stacks — pick how many, then say which stack each band stands in. A phone always stacks everything in one column."
+                options={[{ value: "1", label: "One column (as the phone)" }, { value: "2", label: "Two stacks" }, { value: "3", label: "Three stacks" }]}
+                onchange={(e) => setStacks(e.target.value)} />
+              <span class="text-[11px] text-dim">{stacks
+                ? "each band below says which stack it stands in — unnamed bands stand in stack 1, the on-screen remote in the last"
+                : "the phone's single column, at any width"}</span>
+            </div>
             <div class="mt-2 space-y-1.5">
               {#each bands as bd (bd.key)}
                 <div class="flex flex-wrap items-center gap-2.5" title={bd.hint}>
@@ -317,6 +368,16 @@
                     </span>
                   {:else}
                     <span class="w-[158px] shrink-0"></span>
+                  {/if}
+                  {#if stacks}
+                    <span class="flex shrink-0 items-center gap-1" title={"which stack " + bd.label + " stands in on a wide panel"}>
+                      <span class="text-[11px] text-dim">stack</span>
+                      {#each Array.from({ length: stacks }, (_, i) => i + 1) as n (n)}
+                        <button class={"h-[24px] w-[24px] cursor-pointer rounded-[6px] border text-[11px] " +
+                            (bandColumn(bd.key) === n ? "border-accent/60 bg-accent-wash text-accent-text" : "border-line bg-transparent text-dim hover:text-ink")}
+                          onclick={() => setBandColumn(bd.key, n)}>{n}</button>
+                      {/each}
+                    </span>
                   {/if}
                   {#if bd.key === "volume" && bandOn("volume")}
                     <Select value={a.surface?.volume_variant ?? a.surface?.volume_style ?? ""} class="max-w-44"

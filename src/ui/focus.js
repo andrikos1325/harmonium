@@ -101,7 +101,10 @@ function spatialMove(dir) {
 }
 
 function pageScreen(dir) {
-  const order = CONFIG.screen_order, i = order.indexOf(S.screen);
+  /* surfaces (0.88): pages not shown on this view are skipped when
+     paging — a filter, never a lock (a nav tile still reaches them) */
+  const order = (CONFIG.screen_order || []).filter(id => shownHere(screenOf(id)));
+  const i = order.indexOf(S.screen);
   if (i < 0) return;                       // detail/unlisted screens don't page
   const j = dir === "right" ? i + 1 : i - 1;
   if (j >= 0 && j < order.length) navigate(order[j]);

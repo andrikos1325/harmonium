@@ -37,7 +37,25 @@
   /* castEnts (v0.83.7 — Suresh: "Target Entity starts with the
      cast, as elsewhere"): the owning activity/page hands down its
      cast entities; the preset pickers list them first. */
-  let { tile, tiles, index, ownerScreen = null, castEnts = [] } = $props();
+  let { tile, tiles, index, ownerScreen = null, castEnts = [],
+    /* declCols (0.88): the section's declared tile size, for the Width
+       picker (×1 … Full); absent, the owning page's grid, then 2 */
+    declCols = null } = $props();
+  const declaredCols = () => +declCols ||
+    +(app.draft?.screens?.[ownerScreen]?.grid?.columns) ||
+    +(app.draft?.controllers?.[ownerScreen]?.grid?.columns) || 2;
+  /* WIDTH IS A SIZE, EXCEPT FULL (0.88, tablet-layout.md §3): ×N is N
+     tile columns at every screen size; Full is the whole row. Stored
+     as `span` exactly as before — Full writes the declared count, so
+     the engine's "span ≥ declared = full" reading holds. */
+  const widthOptions = () => {
+    const d = declaredCols();
+    const o = [];
+    for (let n = 1; n < d; n++) o.push({ value: n, label: "×" + n });
+    o.push({ value: d, label: "Full" });
+    return o;
+  };
+  const widthValue = () => Math.min(+(tile.span ?? 1) || 1, declaredCols());
   /* NAV CARDS (v0.25 — one type, four styles): pick an existing page
      or ＋ mint one — a full hub view with activities/presets present
      but OFF ("same anatomy, bits switched off"), entered in DRAFT
@@ -469,8 +487,8 @@
   {ondrop}
   ondragend={() => (armed = false)}>
 <CardRow
-  title={tile.label || friendlyTileName(tile) || tile.id || "(untitled)"}
-  subtitle={tile.type + (tile.entity ? " · " + tile.entity : tile.activity ? " · " + tile.activity : "") + (tile.hidden === true ? " · hidden" : "")
+  title={tile.type === "spacer" ? "Spacer" : (tile.label || friendlyTileName(tile) || tile.id || "(untitled)")}
+  subtitle={(tile.type === "spacer" ? "empty space · " + (widthValue() >= declaredCols() ? "the whole row" : "×" + widthValue()) : tile.type) + (tile.entity ? " · " + tile.entity : tile.activity ? " · " + tile.activity : "") + (tile.hidden === true ? " · hidden" : "")
     /* PROFILE GATES READ OUT LOUD (2026-09-04 — Suresh: "Remote
        can't be hidden, but t_btns2 doesn't seem to do anything":
        both tiles were doing exactly what their gate says — on a
@@ -489,6 +507,16 @@
   onhide={inLib ? () => { if (tile.hidden) delete tile.hidden; else tile.hidden = true; } : null}
   hidden={tile.hidden === true}
 >
+  {#if tile.type === "spacer"}
+    <!-- SPACER (0.88): nothing to configure but its width -->
+    <div class="flex flex-wrap items-end gap-4">
+      <Field label="Width" hint="empty tile columns; Full leaves the rest of the row empty">
+        <Segmented value={widthValue()} options={widthOptions()}
+          onchange={(v) => (tile.span = v)} />
+      </Field>
+      <p class="m-0 pb-2 text-[11px] text-dim">Draws nothing on the remote and is never focused — use it to push the next tile along, or Align on the section to place a row's tiles without spacers.</p>
+    </div>
+  {:else}
   <div class="space-y-3">
     <!-- IDENTITY STRIP (grammar): present on every tab. Round 7
          (Suresh: "Having ID span the entire row is the wrong one
@@ -892,8 +920,8 @@
             onchange={(e) => { const v = String(e.target.value).trim();
               if (v) tile.h = /^\d+$/.test(v) ? +v : v; else delete tile.h; }} />
         </Field>
-        <Field label="Column span" hint="how many grid columns this item spans">
-          <Segmented value={+(tile.span ?? 1)} options={[1, 2, 3, 4]}
+        <Field label="Width" hint="in tiles of this section — ×2 is two tiles wide on the wall as on the remote; Full is the whole row">
+          <Segmented value={widthValue()} options={widthOptions()}
             onchange={(v) => (tile.span = v)} />
         </Field>
         {#if tile.type === "nav"}
@@ -1000,6 +1028,7 @@
       </div>
     {/if}
   </div>
+  {/if}
 </CardRow>
 </div>
 

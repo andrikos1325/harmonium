@@ -14,11 +14,12 @@
   import { selectSlice, renameScreen, deleteScreen, setStatus, subordinateScreens,
     isControllerScreen, renameController, deleteController, duplicateController,
     resetControllerToStock, instantiateDeviceController, entitiesFor,
-    confirmPageDraft, discardPageDraft,
+    confirmPageDraft, discardPageDraft, schedulePreview,
     previewActivity, previewGoto, previewDevice } from "../state.svelte.js";
   import EntityPicker from "../components/EntityPicker.svelte";
   import BuiltinEditor from "./BuiltinEditor.svelte";
   import SectionFold from "../components/SectionFold.svelte";
+  import SectionLayoutFields from "../components/SectionLayoutFields.svelte";
   import { KIND_SURFACES, controllerRoot, fillControlTargetDefaults, tunerOn, setTuner } from "../stocklib.js";
 
   let { screenId, kind = "screen" } = $props();
@@ -207,6 +208,8 @@
   /* this controller's drawers (Apps under TV Media Player, Library
      under MA Media Player) — features of the controller */
   const parentRef = $derived(isLib ? "controller:" + screenId : screenId);
+  /* 0.88: per-section layout strips (editor-only state) */
+  let secLayoutOpen = $state({});
   const drawers = $derived(Object.keys(app.draft?.screens || {})
     .filter((s) => app.draft.screens[s].parent === parentRef && app.draft.screens[s].drawer));
   let drawerOpen = $state({});
@@ -463,10 +466,16 @@
          which the engine pins per-screen (render.js v0.75). -->
     <div class="rounded-[12px] border border-line bg-tile p-3">
       <div class="mb-2 text-[11px] font-bold tracking-[.07em] text-dim uppercase">Layout — grid &amp; tile size</div>
-      <div class="grid grid-cols-5 gap-3">
+      <div class="grid grid-cols-6 gap-3">
         <Field label="Columns" hint="a tile-size statement — wide panels fit more of them">
           <Input type="number" min="1" max="12" value={scr.grid?.columns ?? ""}
             placeholder="2" oninput={(e) => setGridNum("columns", e.target.value)} />
+        </Field>
+        <!-- 0.88: the wall's tile-column count, the author's number
+             (a controller in stacks shares it out across them) -->
+        <Field label="Columns on the wall" hint="blank: derived from the tile size">
+          <Input type="number" min="1" max="24" value={scr.grid?.wide_columns ?? ""}
+            placeholder="auto" oninput={(e) => setGridNum("wide_columns", e.target.value)} />
         </Field>
         <Field label="Tile style" hint="rows = dense list">
           <Select value={scr.grid?.tile_style ?? ""} allowEmpty
@@ -599,7 +608,17 @@
               placeholder="(no header)"
               class="w-44 rounded-[8px] border border-line bg-field px-2 py-1 text-xs text-ink outline-none focus:border-accent/60"
             />
+            <!-- 0.88 phase 2 (ruling 2: bands share the section
+                 fields): the same component the Hub editor uses -->
+            <button class={"cursor-pointer rounded-[6px] border px-2.5 py-[5px] text-[11px] font-medium transition-colors " +
+                (secLayoutOpen[si] ? "border-accent/60 bg-accent-wash text-accent-text" : "border-line-strong bg-surface text-ink-2 hover:bg-sunk")}
+              onclick={() => (secLayoutOpen[si] = !secLayoutOpen[si])}>Section settings</button>
           </div>
+          {#if secLayoutOpen[si]}
+            <div class="space-y-3 rounded-[9px] border border-line bg-surface p-3">
+              <SectionLayoutFields sec={section} {scr} onchange={() => schedulePreview()} />
+            </div>
+          {/if}
           {#each section.tiles as tile, i (i)}
             <TileRow {tile} ownerScreen={screenId} tiles={section.tiles} index={i} />
           {/each}

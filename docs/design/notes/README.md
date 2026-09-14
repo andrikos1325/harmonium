@@ -6,6 +6,7 @@ The canvases that some of these notes were distilled from (`Harmonium control la
 
 | Note | What it covers | Status |
 |---|---|---|
+| [tablet-layout.md](tablet-layout.md) | Wall boards as pages of their own: the section row rule (own / join), widths that don't stretch, per-profile boot page, per-page focus ring; the new tiles a board needs | Design (0.88), not built |
 | [control-language.md](control-language.md) | The rules every control shape follows — sliders, steppers, chips, hold-to-confirm, the button pair — and the token table behind them | Ruled, built (v0.87.0) |
 | [identity-palette.md](identity-palette.md) · [identity-palette-shipped-defaults.md](identity-palette-shipped-defaults.md) | The accent palette and the brand tier: how the colors are derived and which defaults ship | Built (v0.87.0) |
 | [entity-controls.md](entity-controls.md) | Adapters, variants and card groups — the design that gave every device type a proper control | Built (v0.87.0) |

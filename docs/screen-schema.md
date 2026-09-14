@@ -1858,3 +1858,174 @@ never a section default). Studio: Section settings. Guarded by
 tests/probe-section-style.mjs (v0.85.7). An explicit `h` (tile or
 section) now also beats a widget's min-height (the photo card's
 132px floor).
+
+## Addendum 0.88 — section rows, spacers, the span reading, page and profile knobs (2026-09-11)
+
+Design: `docs/design/notes/tablet-layout.md`. Guarded by
+`tests/probe-section-rows.mjs` and `tests/probe-page-profile-knobs.mjs`.
+Everything below is opt-in; a config that says none of it renders as
+before, byte for byte.
+
+### Section row keys
+
+    "sections": [
+      { "title": "Pergola", "row": "own", "tiles": [ ... ] },
+      { "title": "Lounge",  "row": "join", "cols": 2, "tiles": [ ... ] },
+      { "title": "Dining",  "row": "join", "cols": 2, "align": "end", "tiles": [ ... ] },
+      { "title": "More",    "row": "join", "keep": false, "tiles": [ ... ] }
+    ]
+
+| key | values | meaning |
+|---|---|---|
+| `row` | `own` (default) · `join` | own: a new row, the full width, and the next section starts a new row. join: beside the previous section if it fits, else a new row |
+| `keep` | `true` (default) · `false` | join only. true: the section is a BLOCK that joins only when all its columns fit. false: its tiles FLOW — they continue the page grid where the previous section stopped, wrapping like text; no band header (`label_style: "inline"` draws the title as a one-column label in the flow) |
+| `cols` | integer | columns the block takes (default: as many as its tiles span, capped at the page's count) |
+| `stretch` | `true` | the block takes the rest of its row and its tiles grow to fill it |
+| `tile_scale` | number | each ×1 tile is this many columns wide (a 5-tile band on 7 columns: 1.4); sets the block's width when `cols` is absent |
+| `align` | `start` (default) · `center` · `end` | where a block's tiles sit in its columns when they do not fill them (a leading spacer; one-row blocks) |
+
+Everything is measured in TILE COLUMNS — the page's count at the
+current width (`grid.columns` is still the tile SIZE at 480; the
+count is derived, as in v0.68). Packing is greedy in authored order,
+never reordered; gaps are legal. On a 480 panel the count is small, so
+kept-together joins stack and flows simply continue the two-column
+grid — the page is the stack it always was. A section with none of
+these keys takes the old path.
+
+### `spacer` tile
+
+    { "id": "gap", "type": "spacer", "span": 2 }
+
+Takes its columns, draws nothing, is never focused, subscribed or
+re-rendered (render.js places it; `tilesOf` drops it).
+
+### The span reading (changed)
+
+`span` N below the section's declared column count is N tile columns
+at every width (×2 of a declared 4 is two tiles wide at 1920, not a
+fifth of twelve — the v0.68 proportional reading is gone). `span` ≥
+the declared count is Full: the whole row, capped by `max_width`.
+At 480 nothing changes; stored numbers do not move.
+
+### Page keys
+
+    "screens": { "board": { "surfaces": ["tablet"], "focus_ring": "off", ... } }
+
+`surfaces` — which profile `view`s list the page when paging
+(`pageScreen`); absent = all. A filter, never a lock: a nav tile or a
+direct navigate still reaches it. `focus_ring` — a colour or `off`
+(`off` = transparent, not absent, per v0.87.0); precedence page →
+profile `style` → theme; applied on every navigate and undone on
+leaving.
+
+### Profile keys (`remotes.<id>`)
+
+    "wall": { "view": "tablet", "scale": 1.5, "home_screen": "board",
+              "capabilities": ["touch"], "style": { "focus-ring": "off" } }
+
+`view` — `remote` (default) or `tablet`; sets `html.view-tablet`, and
+is what `surfaces` is matched against. `scale` — a zoom on the engine
+root (the density dial); the width arithmetic (`colsFor`, the wide
+gate, `max_width` centring) divides by it, so a 1280 panel at 2 lays
+out as a 640 one. `home_screen` — where this remote boots and where
+Home goes; falls back to the workspace's when absent or unknown.
+
+### `wide_columns` — columns on the wall (2026-09-13)
+
+    "screens": { "bar_wall": { "surfaces": ["tablet"],
+                               "grid": { "wide_columns": 7 },
+                               "sections": [
+                                 { "title": "Heaters", "tiles": [ ... ] },
+                                 { "title": "Scenes", "wide_columns": 3, "tiles": [ ... ] } ] } }
+
+Suresh, 2026-09-13: "I know for *this* dashboard the max number of
+tiles is 7. So I want 7 columns. Not just what a preset Medium/Small
+gives me." `grid.wide_columns` on a page, and `wide_columns` on a
+section, is an explicit column COUNT for wide panels (`html.wide`) —
+the author's number, no tile-size arithmetic, the same at 1280 and
+1920. A compact panel ignores it and keeps the tile size
+(`grid.columns`), so a shared page carries both answers. When the page
+names its count, a section's tile size (`columns`) is a remote-only
+fact — the wall count is the wall count — unless the section names its
+own `wide_columns`. The span reading follows the same number: `span`
+N below it is N columns, at or above it is Full. Capped at 24. Guarded
+by the `wall` fixture in `tests/probe-section-rows.mjs`. Studio: Page
+settings → Layout → "Columns on the wall"; Section settings → the same
+field; on a page shown only on wall tablets the tile size fields are
+hidden, the count is the whole story.
+
+### Duplicate page (Studio, 2026-09-13)
+
+Not a schema key — a Studio verb (`duplicateScreen` in
+`state.svelte.js`, the "Duplicate page" button beside Page settings):
+a deep copy under `<id>_2`, named "<name> copy", placed right after
+the original in `screen_order`, tile ids re-minted. The activities
+band's `room` still names the original, so the copy shows the same
+activities; that is the way to start a wall board from a room page —
+duplicate, Shown on: wall tablets only, Columns on the wall.
+
+### Controller stacks and the on-screen remote band (2026-09-14, phase 2)
+
+    "activities": { "watch_firetv": { "surface": {
+        "wide_columns": 2,
+        "band_column": { "sources": 2, "keys": 2 },
+        "band_order": ["np", "transport", "volume", "remote", "sources"],
+        "remote": false } } }
+
+    "controllers": { "tv_custom": { "sections": [ { "tiles": [
+        { "id": "t_src", "type": "sources", "column": 1, ... } ] } ] } }
+
+On a wide panel a controller's bands may stand in side-by-side
+STACKS. `surface.wide_columns` (2–4) on the running activity says how
+many; `surface.band_column.<band>` says which stack a band stands in
+(per activity, beside `band_order` — the Controller tab is where both
+are decided). A tile's or section's own `column` wins over the
+surface. Unnamed bands stand in stack 1; the on-screen remote stands
+in the LAST stack by default, so a two-stack TV page is mock-up 3
+(controls left, remote right) with nothing authored. Each stack is
+its own tile grid at the page's tile size fitted to the stack's width
+(with `grid.wide_columns` set, the count is shared out across the
+stacks), so a full-width band stays full width of its stack; stacks
+are independent in height. A compact panel never stacks. Engine:
+`controllerStacks` / `stackOf` / `bandOfTile` in `core/context.js`,
+`.stack` in `render.js` and `grid.css`.
+
+Two bands joined the vocabulary: **`remote`** — the `dpad` pad and the
+`buttons` strips (back / home / power), i.e. the physical remote drawn
+on glass; it shows on any profile whose capabilities carry no
+`physical_dpad` (phones and wall tablets alike; the stock tiles' own
+`unless: physical_dpad` is the gate) and takes the surface's switch
+(`remote: false`), order, label (`band_labels.remote`) and column like
+any band. **`keys`** — the dialect's Device keys section (`keys: false`
+drops it). Guarded by `tests/probe-controller-stacks.mjs` and
+`tests/probe-studio-controller-stacks.mjs`.
+
+Sections on a controller take the same layout keys as a page's
+(`columns`, `wide_columns`, `row`, `keep`, `cols`, `stretch`,
+`tile_scale`, `align`, `column`); the controller editor's "Section
+settings" renders the shared fields.
+
+### The on state at two metres — `active-style`, `wash-strength`, the tablet ring default (2026-09-14, phase 3)
+
+    "theme": { "active-style": "wash", "wash-strength": "1.2" }
+    "remotes": { "wall": { "view": "tablet",
+                           "style": { "active-style": "fill", "wash-strength": "1.5" } } }
+
+Two theme keys, overlayable per profile through `remotes.<id>.style`
+like any theme key. `active-style` — `wash` (default: today's bloom /
+tint) or `fill`: a running or on tile is painted SOLID in its identity
+colour (the same `--idw` triplet the wash uses, at `--fill-a` 0.85
+instead of a wash alpha — derived, not a second palette; a bloom
+becomes a flat fill; a tile with no identity fills with the accent at
+`--fill-a-plain` 0.35; glyph and status line ride `--text`); the
+engine sets `html.active-fill`, the CSS does the rest. `wash-strength`
+— a multiplier the engine applies to the six wash alphas (`wash-a`,
+`wash-a-on`, `awash-a`, `awash-a-on`, `wash-a-tint`,
+`wash-a-tint-on`), clamped at 1; applied as numbers on the tokens,
+never as calc() inside rgba() (the Chromium 61 floor). A `view:
+tablet` profile has the focus ring OFF unless its own style names
+one (§15 ruling 5); pages still override. The Studio: Theme → Colors
+→ Active style / Wash strength; Remotes → per profile Active style /
+Wash strength / Focus ring; choosing Wall tablet overlays `fill` on a
+profile that says nothing (ruling 6). Guarded by
+`tests/probe-active-fill.mjs` and `tests/probe-studio-active-fill.mjs`.

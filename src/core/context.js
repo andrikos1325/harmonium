@@ -355,7 +355,8 @@ function classOf(sc, id) {
   if (sc.class) return sc.class;
   if (typeof id === "string" && id.startsWith("detail:")) return "detail";
   if (sc.dpad_passthrough) return "activity";
-  if (id === (CONFIG && CONFIG.home_screen) || sc.banner) return "room";
+  if (id === (CONFIG && CONFIG.home_screen) || id === homeScreen() ||
+      sc.banner) return "room";
   return "group";
 }
 /* group-power scope: switchable device entities on the page */
@@ -376,10 +377,55 @@ function powerEntities(sc) {
    generator tiles for per-activity ORDERING (which happens on the
    DECLARED tiles, before expansion, so a generator keeps its
    identity). */
+/* THE ON-SCREEN REMOTE IS A BAND (0.88 phase 2 — tablet-layout.md §8,
+   ruling 3: "the physical remote drawn on glass … shown when the
+   remote's capabilities carry no physical d-pad"): the stock TV's
+   `dpad` pad and its `buttons` strips (back/home/power) already ARE
+   that band, gated `unless: physical_dpad`; naming them "remote"
+   gives the Controller tab a switch, order arrows, a label slot and
+   a column for them, like any band. `keys` (the dialect's Device
+   keys section) joins the vocabulary for the same reason. */
 const FIXED_BANDS = { media: "np", transport: "transport",
-  mediabtns: "modes", sources: "sources", volume: "volume" };
+  mediabtns: "modes", sources: "sources", volume: "volume",
+  dpad: "remote", buttons: "remote" };
 const RAW_BANDS = Object.assign({ volumes: "volume", speakers: "speakers",
-  groups: "groups", presets: "presets", devices: "devices" }, FIXED_BANDS);
+  groups: "groups", presets: "presets", devices: "devices", keys: "keys" }, FIXED_BANDS);
+/* CONTROLLER STACKS (0.88 phase 2 — §8 mock-ups 2 and 3, ruling 1:
+   "(a) explicit per-band column under a wide_columns count"). On a
+   wide panel a controller's bands may stand in N side-by-side
+   STACKS: a.surface.wide_columns says how many (2–4), and
+   a.surface.band_column.<band> says which stack a band stands in.
+   Per activity, on the surface, beside band_order — the Controller
+   tab is where the author decides both. A tile or section may also
+   carry its own `column` (a custom controller's authored answer),
+   which wins. Unassigned bands stand in stack 1; the on-screen
+   remote stands in the LAST stack by default — mock-up 3 with no
+   authoring at all. 0 = no stacks (compact panel, or none asked). */
+function bandOfTile(t) {
+  return (t && (RAW_BANDS[t.type] ||
+    (t.type === "stepper" && t.kind === "volume" ? "volume" : null))) || null;
+}
+function controllerStacks(sc) {
+  if (!sc || !(sc.class === "activity" || sc.type === "controller")) return 0;
+  if (!isWide()) return 0;
+  const cur = renderActivityId();
+  const act = cur && (CONFIG.activities || {})[cur];
+  const n = act && +actSurface(act).wide_columns;
+  return n >= 2 ? Math.min(4, Math.round(n)) : 0;
+}
+function stackOf(t, sec, stacks) {
+  if (!stacks) return 0;
+  const clamp = v => { const n = +v; return n >= 1 ? Math.min(stacks, Math.round(n)) : 0; };
+  if (t && clamp(t.column)) return clamp(t.column);
+  if (sec && clamp(sec.column)) return clamp(sec.column);
+  const band = bandOfTile(t) ||
+    (sec && sec.tiles && sec.tiles.length ? bandOfTile(sec.tiles[0]) : null);
+  const cur = renderActivityId();
+  const act = cur && (CONFIG.activities || {})[cur];
+  const bc = act && actSurface(act).band_column;
+  if (band && bc && clamp(bc[band])) return clamp(bc[band]);
+  return band === "remote" ? stacks : 1;
+}
 
 /* PER-ACTIVITY BAND ORDER (v0.83.7 — Suresh: "We should have a move
    up and move down to control the order"): a.surface.band_order is
@@ -396,7 +442,7 @@ const RAW_BANDS = Object.assign({ volumes: "volume", speakers: "speakers",
    volumes cast, presets, devices) keep their own names (bandGen). */
 const LABELABLE_BANDS = { media: "np", transport: "transport",
   mediabtns: "modes", sources: "sources", volume: "volume",
-  grouping: "speakers", grouplaunch: "speakers" };
+  grouping: "speakers", grouplaunch: "speakers", dpad: "remote" };
 function surfDressTile(t) {
   const sc = screenOf(S.screen);
   if (!sc || !(sc.class === "activity" || sc.type === "controller")) return t;
@@ -432,8 +478,7 @@ function surfOrderTiles(tiles) {
   const act = cur && (CONFIG.activities || {})[cur];
   const order = act && actSurface(act).band_order;
   if (!Array.isArray(order) || !order.length) return tiles;
-  const bandOf = t => RAW_BANDS[t.type] ||
-    (t.type === "stepper" && t.kind === "volume" ? "volume" : null);
+  const bandOf = bandOfTile;
   const slots = [], bandTiles = [];
   tiles.forEach((t, i) => { if (bandOf(t)) { slots.push(i); bandTiles.push([t, i]); } });
   if (bandTiles.length < 2) return tiles;

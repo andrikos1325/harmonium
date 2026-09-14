@@ -58,6 +58,7 @@ from .const import (
 from .packaging import (
     deploy_bundled_assets,
     deploy_skins_split,
+    engine_version,
     read_stamp,
     should_deploy,
     write_stamp,
@@ -115,19 +116,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         b_fp = await hass.async_add_executor_job(engine_fingerprint, bundled_engine)
         d_fp = await hass.async_add_executor_job(engine_fingerprint, deployed_engine)
         s_fp = await hass.async_add_executor_job(read_stamp, new_dir)
-        if should_deploy(b_fp, d_fp, s_fp):
+        # THE ORPHAN RULE (0.87.0 beta report): the versions each file
+        # carries let should_deploy tell a stranded old release from a
+        # dev push — see packaging.py
+        b_v = await hass.async_add_executor_job(engine_version, bundled_engine)
+        d_v = await hass.async_add_executor_job(engine_version, deployed_engine)
+        if should_deploy(b_fp, d_fp, s_fp, b_v, d_v):
             def _deploy_engine() -> None:
                 new_dir.mkdir(parents=True, exist_ok=True)
                 deployed_engine.write_bytes(bundled_engine.read_bytes())
             await hass.async_add_executor_job(_deploy_engine)
             await hass.async_add_executor_job(write_stamp, new_dir, b_fp)
-            _LOGGER.info("Harmonium engine deployed to %s (bundle %s, was %s)",
-                         deployed_engine, b_fp, d_fp or "empty")
+            _LOGGER.info("Harmonium engine deployed to %s (bundle %s v%s, was %s v%s)",
+                         deployed_engine, b_fp, b_v or "?", d_fp or "empty",
+                         d_v or "?")
         elif b_fp and b_fp != d_fp:
-            _LOGGER.info(
-                "Harmonium engine at %s differs from the bundle (%s vs %s) but "
-                "was not integration-deployed — leaving the manual push alone",
-                deployed_engine, d_fp, b_fp)
+            # WARNING, not INFO (0.87.0 beta report): the one line that
+            # explains "the Studio updated but my remote didn't" must be
+            # visible in Settings -> Logs, which shows WARNING and up
+            _LOGGER.warning(
+                "Harmonium engine at %s (v%s) differs from the bundle (v%s) but "
+                "was not integration-deployed — leaving the manual push alone. "
+                "To take the bundled engine, delete that file and .engine.stamp "
+                "beside it, then restart Home Assistant",
+                deployed_engine, d_v or "?", b_v or "?")
     except OSError as err:
         _LOGGER.error(
             "Harmonium could not deploy the engine to %s: %s — the "

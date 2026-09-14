@@ -19,10 +19,12 @@
         ROADMAP (0.84.2): create + edit the tiers right here, and
         grow this slice into the full per-remote hub (battery, skin,
         keymap, provisioning) — his "at a maximum". */
-  import { app, token } from "../state.svelte.js";
+  import { app, token, schedulePreview } from "../state.svelte.js";
   import Switch from "../components/Switch.svelte";
   import Field from "../components/Field.svelte";
   import EntityPicker from "../components/EntityPicker.svelte";
+  import Select from "../components/Select.svelte";
+  import Input from "../components/Input.svelte";
 
   /* BATTERY ON THE ⓘ PAGE (v0.84.8). Editable HERE rather than only on
      the Code tab — the forum round's lesson: a capability with no UI
@@ -34,6 +36,29 @@
   }
 
   const remotes = $derived(app.draft?.remotes || {});
+  /* PROFILE KNOBS (0.88, tablet-layout.md §6): a wall tablet is a
+     fleet unit wearing a profile — view (what it is), scale (the
+     density dial), home screen (where it boots and Home goes) */
+  const pageOptions = $derived([{ value: "", label: "workspace default (" + (app.draft?.home_screen || "—") + ")" },
+    ...Object.entries(app.draft?.screens || {}).map(([id, s]) => ({ value: id, label: (s?.name || id) + " (" + id + ")" }))]);
+  const setProfile = (r, key, v) => { if (v === "" || v == null || v === false) delete r[key]; else r[key] = v; };
+  /* the profile's STYLE map (theme keys, one layer down — v0.58): the
+     0.88 phase-3 knobs live there: active-style (wash | fill) and
+     wash-strength. Choosing Wall tablet overlays fill (tablet-layout
+     §15 ruling 6: "wash everywhere, the wall profile overlays fill")
+     unless the profile already says something. */
+  const styleOf = (r, k) => r?.style?.[k] ?? "";
+  const setStyle = (r, k, v) => {
+    const val = (v ?? "").toString().trim();
+    if (val) r.style = { ...(r.style || {}), [k]: val };
+    else if (r.style) { delete r.style[k]; if (!Object.keys(r.style).length) delete r.style; }
+    schedulePreview();
+  };
+  const setView = (r, v) => {
+    setProfile(r, "view", v === "tablet" ? "tablet" : "");
+    if (v === "tablet" && !styleOf(r, "active-style")) r.style = { ...(r.style || {}), "active-style": "fill" };
+    schedulePreview();
+  };
 
   /* ---- THE FLEET (design-remote-fleet, 2026-09-02 — Suresh: "I now
      have 4 remotes registered with Harmonium... Surely I should see
@@ -379,6 +404,56 @@
               {#if r.viewport || r.skin?.viewport}&nbsp;· viewport {(r.viewport || r.skin?.viewport)?.w}×{(r.viewport || r.skin?.viewport)?.h}{/if}
               {#if r.style}&nbsp;· {Object.keys(r.style).length} style overrides{/if}
               {#if r.battery_sensor}&nbsp;· battery ✓{/if}
+            </div>
+            <div class="mt-2 grid grid-cols-3 gap-3">
+              <Field label="View" hint="tablet: a wall board — pages marked for tablets page to it, the focus ring is off unless the profile says otherwise, and the on state fills">
+                <Select value={r.view || "remote"}
+                  onchange={(e) => setView(r, e.target.value)}
+                  options={[{ value: "remote", label: "Remote / phone" }, { value: "tablet", label: "Wall tablet" }]} />
+              </Field>
+              <Field label="Scale" hint="zooms the whole remote UI on this profile — 1.3–1.5 for a tablet at arm's length; the column count follows">
+                <Input type="number" min="0.5" max="4" step="0.1" placeholder="1"
+                  value={r.scale ?? ""} class="font-mono text-[12px]"
+                  onchange={(e) => { const n = parseFloat(e.target.value); setProfile(r, "scale", n > 0 && n !== 1 ? n : ""); }} />
+              </Field>
+              <Field label="Home screen" hint="where this remote boots and where its Home key goes">
+                <Select value={r.home_screen || ""} options={pageOptions}
+                  onchange={(e) => setProfile(r, "home_screen", e.target.value)} />
+              </Field>
+            </div>
+            <!-- THE ON STATE AT TWO METRES (0.88 phase 3, tablet-layout §7):
+                 this profile's word on the theme's active style and wash
+                 strength, and its focus ring — the same keys as Theme →
+                 Colors, one layer down -->
+            <div class="mt-2 grid grid-cols-3 gap-3">
+              <Field label="Active style" hint="how a running or on tile is painted here — inherit follows the theme (wash); fill paints it solid in its colour, which reads at wall distance">
+                <Select value={styleOf(r, "active-style")} allowEmpty blankLabel="Inherit (theme)"
+                  options={[{ value: "wash", label: "Wash" }, { value: "fill", label: "Fill" }]}
+                  onchange={(e) => setStyle(r, "active-style", e.target.value)} />
+              </Field>
+              <Field label="Wash strength" hint="multiplies every wash alpha here — 1.5 for more wash without going solid; blank = the theme's">
+                <Input type="number" min="0" max="4" step="0.1" placeholder="1"
+                  value={styleOf(r, "wash-strength")} class="font-mono text-[12px]"
+                  onchange={(e) => setStyle(r, "wash-strength", e.target.value)} />
+              </Field>
+              <Field label="Focus ring" hint="this remote's word — off, a colour, or inherit (a wall tablet is off by default)">
+                <Select value={/^(off|none|false|0|no)$/i.test(styleOf(r, "focus-ring")) ? "off" : styleOf(r, "focus-ring") ? "color" : ""}
+                  allowEmpty blankLabel={r.view === "tablet" ? "Inherit (off on a tablet)" : "Inherit (theme)"}
+                  options={[{ value: "off", label: "Off" }, { value: "color", label: "A color" }]}
+                  onchange={(e) => { const v = e.target.value;
+                    if (!v) setStyle(r, "focus-ring", "");
+                    else if (v === "off") setStyle(r, "focus-ring", "off");
+                    else if (!styleOf(r, "focus-ring") || /^(off|none|false|0|no)$/i.test(styleOf(r, "focus-ring"))) setStyle(r, "focus-ring", "#ffb300"); }} />
+                {#if styleOf(r, "focus-ring") && !/^(off|none|false|0|no)$/i.test(styleOf(r, "focus-ring"))}
+                  <div class="mt-1 flex items-center gap-2">
+                    <input type="color" value={/^#[0-9a-f]{6}$/i.test(styleOf(r, "focus-ring")) ? styleOf(r, "focus-ring") : "#ffb300"}
+                      class="h-[30px] w-[40px] cursor-pointer rounded border border-line-strong bg-field p-0.5"
+                      onchange={(e) => setStyle(r, "focus-ring", e.target.value)} />
+                    <Input value={styleOf(r, "focus-ring")} class="w-28 font-mono text-[12px]"
+                      onchange={(e) => setStyle(r, "focus-ring", e.target.value)} />
+                  </div>
+                {/if}
+              </Field>
             </div>
             <!-- BATTERY (v0.84.8): shows on the remote's ⓘ page. The
                  Fully Kiosk integration publishes both for a kiosk

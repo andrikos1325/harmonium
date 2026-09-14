@@ -104,6 +104,24 @@
             <option value="off">Off · no ring</option>
           </select>
         </Field>
+        <!-- THE ON STATE (0.88 phase 3 — tablet-layout.md §7: "at wall
+             distance the wash reads as nothing"): how a running or on
+             tile is painted, and how strong the wash is. Both overlay
+             per remote (Remotes → the profile's Active style / Wash
+             strength); a Wall tablet profile overlays fill when made. -->
+        <Field label="Active style" hint="a running or on tile: Wash is the bloom / tint (the remote in the hand); Fill paints it solid in its colour (a wall at two metres). Per-remote: the same key in the remote's style.">
+          <select value={(th["active-style"] || "").toLowerCase() === "fill" ? "fill" : ""}
+            onchange={(e) => set("active-style", e.target.value)}
+            class="w-full cursor-pointer rounded-[8px] border border-line bg-tile-hi px-2 py-1.5 font-[inherit] text-xs text-ink outline-none focus:border-accent/60">
+            <option value="">Wash (default)</option>
+            <option value="fill">Fill · solid in its colour</option>
+          </select>
+        </Field>
+        <Field label="Wash strength" hint="multiplies every wash alpha — 1.5 for more wash without going solid, 0.5 for less; blank = 1">
+          <input value={th["wash-strength"] ?? ""} placeholder="1" spellcheck="false" type="number" min="0" max="4" step="0.1"
+            onchange={(e) => set("wash-strength", e.target.value)}
+            class="w-full rounded-[8px] border border-line bg-field px-2 py-1.5 font-mono text-[11.5px] text-ink outline-none focus:border-accent/60" />
+        </Field>
         <Field label="Corner radius" hint="blank = 12px">
           <input value={th["radius"] ?? ""} placeholder="12px" spellcheck="false"
             onchange={(e) => set("radius", e.target.value)}

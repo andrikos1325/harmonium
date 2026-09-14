@@ -9,6 +9,37 @@ by concern: src/core, src/widgets one-file-per-widget, src/ui,
 src/styles; zero-dep `build.mjs` → single-file `dist/index.html`).
 Working docs: `S:\Documents\HA26` · Session partner: Claude (Cowork).
 
+## Current state (v0.88.0-dev — the first 0.87.0 beta reports, 2026-09-11)
+
+Three fixes from the first two days of 0.87.0 in the wild, all integration
+side, none touching the config:
+
+- **`harmonium.run_preset` finds activity-owned presets.** A preset made
+  on an activity's Presets tab lives in `activities[<id>].presets`, not on
+  a page; `_find_preset` only searched screens and controllers and said
+  "no workspace has a preset tile". It now searches activity presets too
+  and gives the entry the same defaults the band generator does at render
+  time (`type: preset`, `activity` = the owner). Test 9 in
+  `tests/test-run-preset.py` is the reporter's exact case.
+- **`services.yaml` describes `set_activity.start` and all of
+  `run_preset`.** Neither was there, so the Actions tab couldn't offer
+  them.
+- **The engine self-deploy gets THE ORPHAN RULE** (`packaging.py`). A HACS
+  update to 0.87.0 left a reporter's remote on the 0.85.8 engine: the
+  deployed file didn't match the ownership stamp, so the deployer kept
+  its hands off — correct for a manual push, wrong for a stranded old
+  release — and the only trace was an INFO line. Now `should_deploy`
+  also sees each engine's `ENGINE_V`: an unstamped file is replaced when
+  its version is strictly older than the bundle's. Dev pushes carry the
+  next version and stay protected; same-version rebuilds and downgrades
+  stay protected; unreadable versions keep hands off. The leave-alone
+  line is a WARNING now, with both versions and the remedy (delete the
+  file and `.engine.stamp`, restart). Thirteen new checks in
+  `tests/test-asset-deploy.py`.
+
+One behavior line for the audit panel under `"0.88.0"` in
+`release-behavior.js` (run_preset). Stamps are `0.88.0-dev` / `b56`.
+
 ## Current state (v0.87.0 — legacy stock photos restored)
 
 An imported pre-skin config could carry an existing `astrion` profile

@@ -175,6 +175,42 @@ res = pk.deploy_skins_split(bundled2, legacy2, adopt_fps=fps)
 check("migrate: unknown flat astrion bytes preserved (their upload)",
       (legacy2 / "astrion.png").read_bytes() == b"THEIR-ASTRION-PHOTO")
 
+# --- THE ORPHAN RULE (0.87.0 beta report, 2026-09-10: HACS update left
+#     the remote on the 0.85.8 engine — stamp didn't match, INFO line
+#     invisible). should_deploy with versions; engine_version reader. ---
+sd = pk.should_deploy
+check("orphan: old rules untouched — empty www deploys",
+      sd("b1", "", "", "0.88.0", "") is True)
+check("orphan: old rules untouched — identical bytes never deploy",
+      sd("b1", "b1", "", "0.88.0", "0.88.0") is False)
+check("orphan: old rules untouched — stamped file is ours to replace",
+      sd("b1", "d1", "d1", "0.88.0", "0.85.8") is True)
+check("orphan: an unstamped OLDER release is replaced (the report)",
+      sd("b1", "d1", "", "0.87.0", "0.85.8") is True)
+check("orphan: an unstamped older release is replaced even with a stale stamp",
+      sd("b1", "d1", "x9", "0.87.0", "0.86.0") is True)
+check("orphan: a dev push (next version) is protected",
+      sd("b1", "d1", "", "0.87.0", "0.88.0-dev") is False)
+check("orphan: a same-version rebuild is protected",
+      sd("b1", "d1", "", "0.87.0", "0.87.0") is False)
+check("orphan: a NEWER release than the bundle is protected (downgrade)",
+      sd("b1", "d1", "", "0.86.0", "0.87.0") is False)
+check("orphan: unknown versions keep hands off",
+      sd("b1", "d1", "", "", "0.85.8") is False
+      and sd("b1", "d1", "", "0.87.0", "") is False
+      and sd("b1", "d1", "", "0.87.0", "garbage") is False)
+check("orphan: dev build sorts below its release and above the previous",
+      pk.version_key("0.88.0-dev") < pk.version_key("0.88.0")
+      and pk.version_key("0.88.0-dev") > pk.version_key("0.87.0")
+      and pk.version_key("0.87.1") > pk.version_key("0.87.0"))
+eng = tmp / "eng.html"
+eng.write_bytes(b'<script>const ENGINE_V = "0.87.0";\nconst X = 1;</script>')
+check("orphan: engine_version reads ENGINE_V from a built engine",
+      pk.engine_version(eng) == "0.87.0")
+eng.write_bytes(b"<html>no stamp here</html>")
+check("orphan: engine_version is '' without a stamp or file",
+      pk.engine_version(eng) == "" and pk.engine_version(tmp / "nope.html") == "")
+
 print(("\nasset-deploy: %d ok / %d FAIL" %
        (0, len(fails))) if fails else "\nasset-deploy: ALL PASS")
 raise SystemExit(1 if fails else 0)

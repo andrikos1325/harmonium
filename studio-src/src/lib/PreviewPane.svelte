@@ -169,6 +169,13 @@
        it previews at a browser-ish 480×800 instead of borrowing a
        handheld's glass. Profiles WITH hardware keep the borrow
        chain untouched. */
+    /* A TABLET PROFILE IS A WALL (0.88 — docs/design/notes/
+       tablet-layout.md §6): `view: tablet` with no measurement of
+       its own previews at a landscape 1280×800, so the engine's wide
+       gate trips and the row rule (own/join, tile columns) shows as
+       the panel will draw it. SoftRemote scales the frame down to
+       the pane; the engine inside still sees the full width. */
+    if (profile?.view === "tablet") return { w: 1280, h: 800 };
     const caps = profile?.capabilities;
     if (Array.isArray(caps) && !caps.includes("physical_dpad"))
       return { w: 480, h: 800 };
@@ -178,6 +185,15 @@
     }
     return { ...SKIN_ASTRION.viewport };
   });
+
+  /* PANE WIDTH (0.88): a phone frame fits the classic 372px pane; a
+     tablet profile's landscape frame gets a wider pane (672px) and
+     the frame is scaled to the 640px that leaves — so a 1280 panel
+     previews at half size, a 1920 one at a third. `fitW` is the
+     width the frame may occupy; the faces scale to it. */
+  const tabletPane = $derived(profile?.view === "tablet");
+  const paneW = $derived(tabletPane ? 672 : 372);
+  const fitW = $derived(tabletPane ? 640 : 352);
 
   let holdLatch = $state(false);
 
@@ -451,6 +467,7 @@
     get skin() { return skin; },
     get layout() { return layout; },
     get plainVp() { return plainVp; },
+    get fitW() { return fitW; },
     get holdLatch() { return holdLatch; },
     get anyHoldable() { return anyHoldable; },
     toggleHold: () => (holdLatch = !holdLatch),
@@ -460,7 +477,7 @@
   };
 </script>
 
-<div class="flex w-[372px] shrink-0 flex-col items-center overflow-y-auto border-l border-line py-3.5">
+<div class="flex shrink-0 flex-col items-center overflow-y-auto border-l border-line py-3.5" style="width:{paneW}px">
   <div class="mb-2.5 flex items-center gap-2">
     {#key app.pvPulse}
       <span class="pv-blip text-[10px] text-ok" title="preview updated">●</span>

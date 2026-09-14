@@ -388,10 +388,21 @@ def register_services(hass: HomeAssistant, hstore: HarmoniumStore,
 
     def _find_preset(config: dict, pid: str):
         """The preset tile with this id, wherever it was authored —
-        screens and controllers, flat `tiles` and `sections[].tiles`.
-        Generated presets (favorites via presets_from) are minted by
-        the ENGINE at render time and never live in the stored
-        config, so they are not addressable here — by design."""
+        screens and controllers (flat `tiles` and `sections[].tiles`),
+        and the ACTIVITY-OWNED presets in activities[<id>].presets
+        (the Studio's "preset · <activity>" card; the engine's presets
+        band draws them). Generated presets (favorites via
+        presets_from) are minted by the ENGINE at render time and never
+        live in the stored config, so they are not addressable here —
+        by design.
+
+        An activity-owned entry carries no `type` and usually no
+        `activity` of its own — the band generator stamps both at
+        render time (gen-bands.js) — so the copy returned here gets
+        the same defaults: `activity` = the owner, unless the entry
+        names another. (0.87.0 beta report, 2026-09-10: "run_preset
+        does not work with my presets — they are defined within an
+        activity".)"""
         for coll in ("screens", "controllers"):
             for scr in (config.get(coll) or {}).values():
                 groups = [scr.get("tiles") or []]
@@ -402,6 +413,10 @@ def register_services(hass: HomeAssistant, hstore: HarmoniumStore,
                         if (isinstance(t, dict) and t.get("id") == pid
                                 and t.get("type") == "preset"):
                             return t
+        for aid, act in (config.get("activities") or {}).items():
+            for p in (act or {}).get("presets") or []:
+                if isinstance(p, dict) and p.get("id") == pid:
+                    return dict({"type": "preset", "activity": aid}, **p)
         return None
 
     async def handle_run_preset(call: ServiceCall) -> None:

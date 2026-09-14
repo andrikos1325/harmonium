@@ -864,6 +864,51 @@ export function renameScreen(oldId, newId) {
   return true;
 }
 
+/* DUPLICATE a SCREEN (0.88 — Suresh, 2026-09-13: "I need a duplicate
+   page function", the door to a wall board: duplicate the room page,
+   mark the copy wall-only, set its columns). A deep copy under
+   `<id>_2` (…_3), named "<name> copy", placed right after the
+   original in screen_order. Tile ids are re-minted so the copy's
+   tiles are its own (dirty chips, snippets, nav ＋ drafts key on
+   them), and any string inside the copy that named an old tile id is
+   rewritten to the new one, so intra-page references survive.
+   Everything else is kept AS IS on purpose: the activities band's
+   `room` still names the original page, so the copy SHOWS the same
+   activities (the engine's generator reads `t.room`); `room`,
+   `activity_state` and `parent` stay too. Nothing points at the copy,
+   so Delete works on it at once. */
+export function duplicateScreen(id) {
+  const d = app.draft;
+  const src = d?.screens?.[id];
+  if (!src) return null;
+  let n = 2, nid = id + "_" + n;
+  while (d.screens[nid] || d.controllers?.[nid]) nid = id + "_" + ++n;
+  const copy = JSON.parse(JSON.stringify($state.snapshot(src)));
+  copy.name = (copy.name || id) + " copy";
+  const map = {};
+  const mint = () => "tile_" + Math.random().toString(36).slice(2, 6);
+  for (const g of [copy.tiles || [], ...(copy.sections || []).map((s) => s.tiles || [])])
+    for (const t of g) if (t && typeof t.id === "string" && t.id) { map[t.id] = mint(); t.id = map[t.id]; }
+  const walk = (node) => {
+    if (Array.isArray(node)) { node.forEach((v, i) => { if (typeof v === "string" && map[v]) node[i] = map[v]; else walk(v); }); return; }
+    if (node && typeof node === "object")
+      for (const [k, v] of Object.entries(node)) {
+        if (k === "id") continue;   /* already re-minted above */
+        if (typeof v === "string" && map[v]) node[k] = map[v]; else walk(v);
+      }
+  };
+  walk(copy);
+  d.screens[nid] = copy;
+  if (Array.isArray(d.screen_order)) {
+    const at = d.screen_order.indexOf(id);
+    if (at >= 0) d.screen_order.splice(at + 1, 0, nid); else d.screen_order.push(nid);
+  }
+  selectSlice((roomIds().includes(nid) ? "view." : "screens.") + nid);
+  schedulePreview();
+  setStatus("page duplicated as '" + nid + "' — rename it, then Page settings → Shown on to make it a wall board", "ok");
+  return nid;
+}
+
 /* Delete a SCREEN — guarded: refuses while anything still points at
    it (children, group/nav tiles, activity screens or ownership, home
    anchors) and names the blockers; on success it also leaves

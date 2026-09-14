@@ -29,6 +29,11 @@
   let { pv, editing = $bindable() } = $props();
   const layout = $derived(pv.layout);
   const plainVp = $derived(pv.plainVp);
+  /* FIT (0.88 — tablet profiles): a frame wider than the pane allows
+     is drawn scaled down (CSS transform, so the engine inside still
+     measures the full viewport and lays out as the panel will).
+     A phone frame fits at 1 and is untouched. */
+  const fit = $derived(Math.min(1, (pv.fitW || 352) / (plainVp.w || 1)));
   const holdLatch = $derived(pv.holdLatch);
   const anyHoldable = $derived(pv.anyHoldable);
   const { keyFor, holdKeyFor, softPress, keyTitle, washed, holdWashed,
@@ -54,10 +59,16 @@
 </script>
 
   <div class="shrink-0 rounded-[22px] bg-black p-1 shadow-[0_0_0_2px_#2c333d,0_12px_40px_rgba(0,0,0,.5)]">
-    <iframe id="pv" bind:this={pvEl} title="Live preview"
-      src={"/local/harmonium/index.html" + (version.engine ? "?v=" + encodeURIComponent(version.engine) : "") + "#preview=1"}
-      class="rounded-[18px] border-0 bg-bg"
-      style="width:{plainVp.w}px; height:{plainVp.h}px"></iframe>
+    <!-- the box is the SCALED size; the iframe inside keeps its full
+         layout size and is transformed down to fit (fit = 1 on a
+         phone frame, so nothing changes there) -->
+    <div class="overflow-hidden rounded-[18px]"
+      style="width:{Math.round(plainVp.w * fit)}px; height:{Math.round(plainVp.h * fit)}px">
+      <iframe id="pv" bind:this={pvEl} title="Live preview"
+        src={"/local/harmonium/index.html" + (version.engine ? "?v=" + encodeURIComponent(version.engine) : "") + "#preview=1"}
+        class="border-0 bg-bg"
+        style="width:{plainVp.w}px; height:{plainVp.h}px; transform:scale({fit}); transform-origin:0 0"></iframe>
+    </div>
   </div>
 
   <div id="soft" class="mt-3 flex flex-col items-center">

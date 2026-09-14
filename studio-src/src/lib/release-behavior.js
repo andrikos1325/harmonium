@@ -6,6 +6,12 @@
    release with no entry simply shows none. Keep each line one plain
    sentence — the release notes carry the detail. */
 export const RELEASE_BEHAVIOR = {
+  "0.88.0": [
+    "harmonium.run_preset now finds a preset authored on an activity's Presets tab (not just presets placed on a page) and starts that activity first, the same as a tap.",
+    "On a wide panel a tile's width is a size, not a share: ×2 of a section declaring 4 is two tiles wide at every screen size (it used to be a fifth of ten columns at 1280); a width at or above the declared count is still the whole row. Nothing changes on a phone.",
+    "A remote profile set to Wall tablet has the focus ring off unless its style says otherwise, and its on tiles fill solid (Active style: Fill) when the profile is made that way.",
+    "On a wide panel the stock TV's on-screen remote stands in the last stack when an activity's Controller tab asks for stacks; on a phone its place in the order is unchanged.",
+  ],
   "0.87.0": [
     "Tapping a pre-wired device's tile opens a page that speaks THAT device — its keys, its dialect, its apps — instead of the running activity's; its physical keys drive the device when it has a D-pad.",
     "Now Playing defaults to the Art hero on the stock TV and Music controllers and on the Media Device page; Auto means that default. Set a different look on a custom copy's tile, or per activity on its Controller tab.",

@@ -172,6 +172,12 @@ function genKeyTiles(t) {
        ride the classLaunch grammar exactly like apps. No dialect, no
        catalog, or commands unwired → nothing renders and the section
        skips itself (empty sections are dropped, heading included). */
+    /* the Controller tab's switch (0.88 phase 2): keys is a band */
+    {
+      const aid = renderActivityId();
+      const act = aid && (CONFIG.activities || {})[aid];
+      if (act && actSurface(act).keys === false) return [];
+    }
     const ctx = ctxFor(S.screen);
     let dId = t.dialect || ctx.dialect || ctx.app_class;
     if (typeof dId === "string" && dId.startsWith("$context."))

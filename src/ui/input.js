@@ -508,7 +508,7 @@ function act(button, phys) {
     const h = w.capture[button];
     if (h) { h(eid, t); renderStates(); return; }
     if (button === "back") { releaseCapture(); renderStates(); return; }
-    if (button === "home") { releaseCapture(); navigate(CONFIG.home_screen); return; }
+    if (button === "home") { releaseCapture(); navigate(homeScreen()); return; }
   }
 
   switch (button) {
@@ -581,7 +581,7 @@ function act(button, phys) {
       {
         const bsc = screenOf(S.screen) || {};
         const bdest = (bsc.parent && screenOf(bsc.parent)) ? bsc.parent
-          : (S.screen !== CONFIG.home_screen ? CONFIG.home_screen : null);
+          : (S.screen !== homeScreen() ? homeScreen() : null);
         if (bdest && screenOf(bdest) && bdest !== S.screen)
           navigate(bdest, true);
       }
@@ -667,7 +667,7 @@ function act(button, phys) {
       S.stack = [];
       const scr = screenOf(S.screen) || {};
       const dest = (scr.parent && screenOf(scr.parent)) ? scr.parent
-        : S.screen !== CONFIG.home_screen ? CONFIG.home_screen
+        : S.screen !== homeScreen() ? homeScreen()
         : CONFIG.global.main_home;
       if (dest && screenOf(dest) && dest !== S.screen) navigate(dest, true);
       break;

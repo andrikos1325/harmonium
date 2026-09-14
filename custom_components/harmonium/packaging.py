@@ -24,18 +24,33 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 STAMP_FILE = ".engine.stamp"
 
 
-def should_deploy(bundled_fp: str, deployed_fp: str, stamp_fp: str) -> bool:
+def should_deploy(bundled_fp: str, deployed_fp: str, stamp_fp: str,
+                  bundled_v: str = "", deployed_v: str = "") -> bool:
     """Decide whether setup may (over)write www/harmonium/index.html.
 
     bundled_fp  — fingerprint of the engine inside the integration
                   ("" = dev checkout without a bundle: never deploy)
     deployed_fp — fingerprint of what's at www/ ("" = nothing there)
     stamp_fp    — what the integration last deployed ("" = never)
+    bundled_v / deployed_v — the ENGINE_V each file carries (optional;
+                  "" = unknown). See THE ORPHAN RULE below.
+
+    THE ORPHAN RULE (0.87.0 beta report, 2026-09-10: a HACS update to
+    0.87.0 left the remote on the 0.85.8 engine — the Studio updated,
+    the engine never did, and the only trace was an INFO line). The
+    stamp protects a MANUAL PUSH from being reverted; it was never
+    meant to freeze an old RELEASE whose stamp went missing or
+    stale. The two are told apart by version: a dev push carries the
+    NEXT version ("0.88.0-dev" > "0.87.0"), a stranded release carries
+    an OLDER one. So an unstamped file is replaced only when its
+    ENGINE_V is strictly older than the bundle's; same version or newer
+    (or a bundle we can't read a version from) keeps the old rule.
     """
     if not bundled_fp:
         return False              # nothing to deploy (dev checkout)
@@ -43,7 +58,47 @@ def should_deploy(bundled_fp: str, deployed_fp: str, stamp_fp: str) -> bool:
         return True               # empty www — always provision
     if bundled_fp == deployed_fp:
         return False              # already current
-    return stamp_fp == deployed_fp   # ours to replace; a manual push is not
+    if stamp_fp == deployed_fp:
+        return True               # ours to replace
+    # not ours: a manual push — unless it is an orphaned OLDER release
+    return is_older_version(deployed_v, bundled_v)
+
+
+def version_key(v: str):
+    """"0.87.0" -> (0, 87, 0, 1); "0.88.0-dev" -> (0, 88, 0, 0) — a dev
+    build sorts BELOW the release it is heading for and ABOVE every
+    earlier release. None when the string isn't a version at all."""
+    if not v:
+        return None
+    core, _, tail = str(v).strip().partition("-")
+    parts = core.split(".")
+    if not parts or not all(p.isdigit() for p in parts):
+        return None
+    nums = [int(p) for p in parts][:3]
+    while len(nums) < 3:
+        nums.append(0)
+    return tuple(nums) + ((0 if tail else 1),)
+
+
+def is_older_version(deployed_v: str, bundled_v: str) -> bool:
+    """True when both parse and the deployed engine is strictly older
+    than the bundle. Unknown on either side = False (keep hands off)."""
+    a, b = version_key(deployed_v), version_key(bundled_v)
+    return a is not None and b is not None and a < b
+
+
+_ENGINE_V_RE = re.compile(rb'const ENGINE_V = "([^"]{1,40})"')
+
+
+def engine_version(path: Path) -> str:
+    """The ENGINE_V string baked into a built engine (src/core/diag.js
+    stamps it; the diag page shows it). "" when the file is missing or
+    carries none (engines older than the stamp, or not an engine)."""
+    try:
+        m = _ENGINE_V_RE.search(path.read_bytes())
+    except OSError:
+        return ""
+    return m.group(1).decode("ascii", "replace") if m else ""
 
 
 def read_stamp(deploy_dir: Path) -> str:

@@ -15,6 +15,8 @@
        snippet chip sat in its own mostly-empty band above the rows;
        header placement keeps the section rhythm even) */
     actions = null,
+    /* extraAdds (0.88): small secondary add buttons — [{label, title, onclick}] */
+    extraAdds = [],
     collapsed = $bindable(undefined), children } = $props();
   const bodyShown = $derived(!!children && collapsed !== true);
 </script>
@@ -41,6 +43,10 @@
           : "border-line-strong bg-surface text-ink-2 hover:bg-sunk")}
       onclick={() => (settingsOpen = !settingsOpen)}>Section settings</button>
     {#if actions}{@render actions()}{/if}
+    {#each extraAdds as x (x.label)}
+      <button class="shrink-0 cursor-pointer rounded-[6px] border border-line-strong bg-surface px-2.5 py-[7px] text-[11px] font-medium text-ink-2 hover:bg-sunk"
+        title={x.title || ""} onclick={x.onclick}>{x.label}</button>
+    {/each}
     {#if onAdd2 && add2Label}
       <button class="shrink-0 cursor-pointer rounded-[6px] border border-line-strong bg-surface px-2.5 py-[7px] text-[11px] font-medium text-ink-2 hover:bg-sunk"
         onclick={onAdd2}>{add2Label}</button>

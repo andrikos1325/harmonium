@@ -77,21 +77,26 @@
 function wideProbe() {
   try {
     var w = window.innerWidth || 0, h = window.innerHeight || 0;
-    return w >= 840 && h >= 600;
+    var z = typeof deviceScale === "function" ? deviceScale() : 1;
+    return w / z >= 840 && h / z >= 600;
   } catch (e) { return false; }
 }
+/* top-level so applyConfig can re-ask once the profile's `scale` is
+   known (0.88): a 1280 panel at scale 2 is a 640 one and must not be
+   wide */
+function wideApply() {
+  var el = document.documentElement;
+  var on = wideProbe();
+  if (on === el.classList.contains("wide")) return;    /* no churn */
+  if (on) el.classList.add("wide"); else el.classList.remove("wide");
+  /* the column count is computed in JS (colsFor), so crossing the
+     gate must re-render — CSS alone cannot do it */
+  if (typeof CONFIG !== "undefined" && CONFIG &&
+      typeof S !== "undefined" && S.screen &&
+      typeof navigate === "function") navigate(S.screen, true);
+}
 (function () {
-  var apply = function () {
-    var el = document.documentElement;
-    var on = wideProbe();
-    if (on === el.classList.contains("wide")) return;    /* no churn */
-    if (on) el.classList.add("wide"); else el.classList.remove("wide");
-    /* the column count is computed in JS (colsFor), so crossing the
-       gate must re-render — CSS alone cannot do it */
-    if (typeof CONFIG !== "undefined" && CONFIG &&
-        typeof S !== "undefined" && S.screen &&
-        typeof navigate === "function") navigate(S.screen, true);
-  };
+  var apply = wideApply;
   apply();
   var t = null;
   var soon = function () { clearTimeout(t); t = setTimeout(apply, 150); };
@@ -180,7 +185,7 @@ document.getElementById("tvHome").addEventListener("click", () => act("home", fa
     var sc = screenOf(S.screen) || {};
     if (edge === 1 && dx > 0) {                        // left edge → right: parent
       var par = (sc.parent && screenOf(sc.parent)) ? sc.parent
-        : (S.screen !== CONFIG.home_screen ? CONFIG.home_screen
+        : (S.screen !== homeScreen() ? homeScreen()
           : (CONFIG.global && CONFIG.global.main_home));
       if (par && screenOf(par) && par !== S.screen) { S.stack = []; navigate(par, true); }
       else rubber(1);
@@ -214,7 +219,7 @@ document.getElementById("endBtn").addEventListener("click", () => {
     if (!iHeld) {
       /* tap on diag toggles back home; tap elsewhere snapshots THIS
          page's key map (spec §10.1) then opens the diag/key-map card */
-      if (S.screen === "diag:") navigate(CONFIG.home_screen || "");
+      if (S.screen === "diag:") navigate(homeScreen() || "");
       else if (typeof openKeymapCard === "function") openKeymapCard();
       else navigate("diag:");
     }
@@ -405,7 +410,15 @@ function applyConfig(cfg, devName) {
      layer down, so a wall tablet and a hardware remote can disagree
      about chrome without forking a config. Applied AFTER the theme so
      the profile wins; an un-styled profile changes nothing. */
-  applyTheme(Object.assign({}, CONFIG.theme || {}, DEVICE.style || {}));
+  applyTheme(themeBase());
+  S._pageRing = false;
+  /* SCALE (0.88 — the density dial): a wall tablet at arm's length is
+     a big remote; remotes.<id>.scale zooms the engine root. Width
+     arithmetic (colsFor, the wide gate) divides by it so a 1280 panel
+     at 1.5 lays out as the ~853 it now is. */
+  document.documentElement.style.zoom = deviceScale() === 1 ? "" : String(deviceScale());
+  document.documentElement.classList.toggle("view-tablet", deviceView() === "tablet");
+  wideApply();
   dbgInit();
   S.stack = [];
   /* preview re-injection keeps the screen being edited (falls back to
@@ -418,7 +431,7 @@ function applyConfig(cfg, devName) {
     navigate(dst, true);
   } else {
     const keep = PREVIEW && S.screen && screenOf(S.screen);
-    navigate(keep ? S.screen : CONFIG.home_screen, true);
+    navigate(keep ? S.screen : homeScreen(), true);
   }
   if (S.connected) subscribeFor(S.screen);
 }

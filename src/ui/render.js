@@ -337,6 +337,9 @@ function navigate(screenId, isBack) {
   if (S.screen && !isBack && screenId !== S.screen) S.stack.push(S.screen);
   releaseCapture(); clearConfirm();
   S.screen = screenId;
+  /* per-page focus ring (0.88): the page's word on top of profile and
+     theme; undone when the next page has none */
+  applyPageRing(sc);
   /* THE REVIEW PANEL FOLLOWS (v0.79.1 — Suresh: "add a light, but
      visible wash to the soft remote keys that are active on the
      page"): in the Studio preview, every landing is reported to the
@@ -395,11 +398,22 @@ function navigate(screenId, isBack) {
      and it leaves the scroll track at the screen edge where a thumb
      expects it. */
   const pad = maxW
-    ? Math.max(12, Math.round(((window.innerWidth || REF_W) - maxW) / 2)) : 0;
+    ? Math.max(12, Math.round(((window.innerWidth || REF_W) / deviceScale() - maxW) / 2)) : 0;
   grid.style.paddingLeft = grid.style.paddingRight = pad ? pad + "px" : "";
   const usable = usableWidth(maxW);
   const decl = g.columns || 2;
-  const cols = colsFor(decl, g.tile_width, usable);
+  /* COLUMNS ON THE WALL (0.88 — Suresh, 2026-09-13: "I know for
+     *this* dashboard the max number of tiles is 7. So I want 7
+     columns. Not just what a preset Medium/Small gives me."). On a
+     wide panel an explicit `wide_columns` IS the count — no tile-size
+     arithmetic; a compact panel ignores it and keeps the tile size.
+     A section may declare its own (below). Span reading follows the
+     same number: span N below it is N columns, at or above it is the
+     full width. */
+  const wideN = wideColumnsOf(g);
+  let cols = wideN || colsFor(decl, g.tile_width, usable);
+  const declSpan = wideN || decl;
+  let usableCol = usable;   /* the width a section fits into (a stack's, when stacked) */
   /* minmax(0,1fr): columns may shrink below content min-width, so a
      wide tile (trail + long label) can never burst the viewport */
   grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
@@ -429,6 +443,36 @@ function navigate(screenId, isBack) {
     styleDecl ? styleDecl === "row" : declCols === 1;
   const row = rowOf(g.tile_style, decl);
   grid.innerHTML = "";
+  /* CONTROLLER STACKS (0.88 phase 2 — tablet-layout.md §8, ruling 1):
+     on a wide panel a controller whose running activity says
+     surface.wide_columns ≥ 2 draws N side-by-side stacks; every
+     band, section and loose tile stands in the stack stackOf() names
+     (its own `column`, else the surface's band_column, else stack 1;
+     the on-screen remote in the last). Each stack is its own tile
+     grid at the page's tile size fitted to the stack's width, so a
+     full-width band stays full width of ITS stack. Nothing here runs
+     on a compact panel or a hub page. */
+  const stacks = controllerStacks(sc);
+  let stackEls = null;
+  if (stacks) {
+    grid.style.gridTemplateColumns = `repeat(${stacks}, minmax(0, 1fr))`;
+    usableCol = Math.max(1, Math.round(usable / stacks));
+    cols = wideN ? Math.max(1, Math.round(wideN / stacks))
+      : colsFor(decl, g.tile_width, usableCol);
+    stackEls = [];
+    for (let k = 0; k < stacks; k++) {
+      const st = document.createElement("div");
+      st.className = "stack";
+      st.dataset.cols = String(cols);
+      st.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+      grid.appendChild(st);
+      stackEls.push(st);
+    }
+  }
+  /* where a section's block / header / loose tile lands: the page
+     grid, or its stack */
+  const pageHost = (t, sec) => stackEls
+    ? stackEls[stackOf(t, sec, stacks) - 1] : grid;
   const sections = sc.sections || [{ tiles: sc.tiles || [] }];
   const heroJumps = [];
   /* BROWSE BANDS (v0.50): a section containing a browse tile sends
@@ -436,6 +480,27 @@ function navigate(screenId, isBack) {
      items only. _active re-arms per render via the generator. */
   S.browse._active = false;
   S.browse.barTiles = [];
+  /* SECTION ROWS (0.88, docs/design/notes/tablet-layout.md §3–4). A
+     section may say how it sits on the page's row of tile columns:
+       row: "own"  — a new row, the full width (the legacy behaviour
+                     for a titled section; explicit here);
+       row: "join" — beside the previous section if it fits, else a
+                     new row (keep: true, the default), or its tiles
+                     simply CONTINUE the previous grid (keep: false);
+       cols / stretch / tile_scale / align — how many page columns a
+                     joined or owning block takes and how its tiles
+                     sit in them.
+     Everything is measured in TILE COLUMNS — the page's `cols` — so
+     the fit rule is integer and the browser's own auto-placement
+     does the packing (an item spanning N lands on the current row
+     only if N columns are free there; no backfilling — authored
+     order is law). A section with none of these keys takes the old
+     path below byte-for-byte. On a compact panel (2 columns) nothing
+     ever fits beside anything, so the page is the stack it always
+     was. `rowUsed` is bookkeeping for `stretch` only. */
+  let rowUsed = 0;
+  const spanSum = (list, dc, ac) =>
+    list.reduce((n, t) => n + spanOf(t, dc, ac), 0);
   sections.forEach(sec => {
     if (sec.enabled === false) return;   // switched off in the Studio
     let secTiles = sec.tiles;
@@ -487,27 +552,126 @@ function navigate(screenId, isBack) {
         }
       }
     }
-    if (secTitle) {
-      const h = document.createElement("div");
-      h.className = "shead"; h.textContent = secTitle;
-      grid.appendChild(h);
-      anchorEl = h;
-    }
     /* a section may declare its own tile size; absent, it inherits the
        screen's — declared AND rendered, so spans scale consistently */
-    const secDecl = sec.columns || decl;
-    const secCols = sec.columns
-      ? colsFor(sec.columns, sec.tile_width, usable) : cols;
+    /* on a wall whose PAGE names its count, a section's tile size is
+       a remote-only fact: the wall count is the wall count, unless
+       the section names its own (a leftover Medium on a wall-only
+       page must never silently beat the page's 7) */
+    const secWide = wideColumnsOf(sec);
+    const secSize = sec.columns && !wideN ? sec.columns : 0;
+    const secDecl = secWide || (wideN ? wideN : sec.columns || decl);
+    let secCols = secWide ? secWide : secSize
+      ? colsFor(secSize, sec.tile_width, usableCol) : cols;
+    /* ROW-NESS READS THE TILE SIZE, NEVER THE WALL COUNT (2026-09-14 —
+       Suresh, his Bar board: "Something wrong with Presets": a page
+       saying 7 columns on the wall turned every Large-tile section's
+       rows into cards, because the declared count fed both the span
+       reading and the tile-style fallback). The v0.68 rule stands: a
+       section declaring 1 draws rows at any width; `wide_columns`
+       says how many across, not what a tile looks like. */
     const secRow = rowOf(sec.tile_style || (sec.columns ? null :
-      (sc.grid && sc.grid.tile_style)), secDecl);
+      (sc.grid && sc.grid.tile_style)), sec.columns || decl);
     let host = grid;
-    if (sec.columns || brList || brCols) {
+    const rowMode = sec.row === "own" || sec.row === "join" ? sec.row : null;
+    const rowKeys = rowMode || sec.cols || sec.align || sec.stretch ||
+      sec.tile_scale;
+    const flowing = rowMode === "join" && sec.keep === false;
+    if (rowKeys && !brList && !brCols && flowing) {
+      /* JOIN, FLOWING: the tiles continue the PAGE grid where the
+         previous section left off — after a block's last column, or
+         after the last loose tile. No band header (it would start
+         mid-row); an inline label tile when asked for. */
+      host = pageHost(null, sec);
+      secCols = cols;
+      if (secTitle && sec.label_style === "inline") {
+        const h = document.createElement("div");
+        h.className = "shead shead-inline"; h.textContent = secTitle;
+        host.appendChild(h);
+        anchorEl = h;
+        rowUsed += 1;
+      }
+      rowUsed = (rowUsed + spanSum(vis, secDecl, secCols)) % secCols;
+    } else if (rowKeys && !brList && !brCols) {
+      /* OWN, or JOIN KEPT TOGETHER: a block that spans N page columns,
+         header inside, its own inner grid. */
+      const own = rowMode !== "join";
+      const across = Math.max(1, spanSum(vis, secDecl, cols));
+      const scale = +sec.tile_scale > 0 ? +sec.tile_scale : 0;
+      let N;
+      if (own) N = cols;
+      else if (sec.stretch) N = rowUsed > 0 && rowUsed < cols ? cols - rowUsed : cols;
+      else if (+sec.cols > 0) N = Math.min(cols, Math.round(+sec.cols));
+      else if (scale) N = Math.min(cols, Math.max(1, Math.round(across * scale)));
+      else N = Math.min(cols, across);
+      /* inner columns: the tiles keep their size (N of them fit) unless
+         the block stretches (tiles grow to fill N) or scales (each
+         tile is `scale` columns wide) */
+      let inner = sec.stretch ? Math.min(across, N)
+        : scale ? Math.max(1, Math.round(N / scale)) : N;
+      if (secWide) inner = secWide;   /* the block says its count outright */
+      else if (secSize) {
+        /* the block declares its own tile size — fit that size into
+           the width the block actually gets */
+        inner = colsFor(secSize, sec.tile_width,
+          Math.max(1, Math.round(usableCol * N / cols)));
+      }
+      const block = document.createElement("div");
+      block.className = "sec" + (own ? " sec-own" : " sec-join");
+      block.style.gridColumn = own ? "1 / -1" : "span " + N;
+      if (secTitle) {
+        const h = document.createElement("div");
+        h.className = "shead"; h.textContent = secTitle;
+        block.appendChild(h);
+        anchorEl = h;
+      }
       host = document.createElement("div");
       host.className = "secgrid";
-      host.style.gridTemplateColumns =
-        `repeat(${brList ? 1 : brCols || secCols}, minmax(0, 1fr))`;
-      grid.appendChild(host);
-      anchorEl = anchorEl || host;
+      host.dataset.cols = String(inner);
+      host.style.gridTemplateColumns = `repeat(${inner}, minmax(0, 1fr))`;
+      block.appendChild(host);
+      pageHost(null, sec).appendChild(block);
+      anchorEl = anchorEl || block;
+      secCols = inner;
+      /* ALIGN: where the tiles sit when they do not fill the block —
+         a leading spacer, auto-placed, so authored order holds (a
+         definite grid-column-start would be placed before the auto
+         items and reorder them). One-row blocks only. */
+      const used = spanSum(vis, secDecl, inner);
+      if (used < inner && (sec.align === "end" || sec.align === "center")) {
+        const lead = sec.align === "end" ? inner - used
+          : Math.floor((inner - used) / 2);
+        if (lead > 0) {
+          const sp = document.createElement("div");
+          sp.className = "spacer";
+          sp.style.gridColumn = "span " + lead;
+          host.appendChild(sp);
+        }
+      }
+      rowUsed = own ? 0 : (rowUsed + N <= cols ? rowUsed + N : N);
+    } else {
+      /* THE OLD PATH (no row keys): header spanning the page, tiles in
+         the page grid — or a full-width inner grid when the section
+         declares its own tile size or a browse view asks for one. */
+      if (secTitle) {
+        const h = document.createElement("div");
+        h.className = "shead"; h.textContent = secTitle;
+        pageHost(null, sec).appendChild(h);
+        anchorEl = h;
+      }
+      if (secSize || secWide || brList || brCols) {
+        host = document.createElement("div");
+        host.className = "secgrid";
+        const hc = brList ? 1 : brCols || secCols;
+        host.dataset.cols = String(hc);
+        host.style.gridTemplateColumns = `repeat(${hc}, minmax(0, 1fr))`;
+        pageHost(null, sec).appendChild(host);
+        anchorEl = anchorEl || host;
+        rowUsed = 0;
+      } else {
+        rowUsed = secTitle ? 0 : rowUsed;
+        rowUsed = (rowUsed + spanSum(vis, secDecl, secCols)) % cols;
+      }
     }
     /* CARD GROUPS (entity-controls Phase 3 — design-card-group-focus):
        members sharing a non-empty card_group in THIS rendered section
@@ -518,13 +682,29 @@ function navigate(screenId, isBack) {
        element, so the focus walk, ring, and capture see ordinary
        tiles. An adapter with no row form renders standalone. */
     const cgHosts = {};
+    /* a loose tile (no section grid of its own) lands in the page
+       grid — or, stacked, in the stack ITS band names */
+    const loose = host === grid;
     vis.forEach(t => {
+      const th = loose && stackEls ? pageHost(t, sec) : host;
       const sp = spanOf(t, secDecl, secCols);
+      /* SPACER (0.88): draws nothing, takes its columns, never focused —
+         no #tile_ id, so focusables() and renderStates skip it */
+      if (t.type === "spacer") {
+        const el = document.createElement("div");
+        el.className = "spacer";
+        if (sp > 1) el.style.gridColumn = "span " + sp;
+        th.appendChild(el);
+        return;
+      }
       const el = makeTile(t, t.brRow != null ? !!t.brRow : secRow, sp);
+      /* a flowing tile sits on the row's baseline, so it lines up with
+         the tiles of a titled block beside it, not with its header */
+      if (flowing) el.classList.add("flow");
       const gid = typeof t.card_group === "string" && t.card_group &&
         tileGroupable(t) ? t.card_group : null;
       if (!gid) {
-        host.appendChild(el);
+        th.appendChild(el);
         anchorEl = anchorEl || el;
         return;
       }
@@ -533,7 +713,7 @@ function navigate(screenId, isBack) {
         g = cgHosts[gid] = document.createElement("div");
         g.className = "cardgrp" + (sp >= 2 ? " span2" : "");
         if (sp > 2) g.style.gridColumn = "span " + sp;
-        host.appendChild(g);
+        th.appendChild(g);
       }
       g.appendChild(el);
       anchorEl = anchorEl || g;
@@ -554,7 +734,8 @@ function navigate(screenId, isBack) {
      typed yet is an empty grid ON PURPOSE — the query line and the
      keyboard above it ARE the page, and "add tiles in the Studio"
      would be a lie. */
-  if (!grid.children.length && !(S.browse && S.browse._active)) {
+  const drawn = stackEls ? stackEls.some(st => st.children.length) : grid.children.length > 0;
+  if (!drawn && !(S.browse && S.browse._active)) {
     const hint = document.createElement("div");
     const isCtrl = sc.class === "activity" || sc.type === "controller" ||
       sc.view_kind === "controller";
@@ -668,7 +849,7 @@ function updateBarChrome() {
   const mh = (CONFIG.global || {}).main_home;
   const hdest = (mh && S.screen === mh) ? null
     : (scr.parent && screenOf(scr.parent)) ? scr.parent
-    : S.screen !== CONFIG.home_screen ? CONFIG.home_screen
+    : S.screen !== homeScreen() ? homeScreen()
     : mh;
   const canHome = !!(hdest && screenOf(hdest) && hdest !== S.screen);
   home.classList.toggle("hidden", !touchOnly || !canHome);

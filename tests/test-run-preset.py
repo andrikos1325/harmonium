@@ -21,7 +21,11 @@ run_preset handler is driven directly. Pins:
      only be tapped on a remote;
   7. a sequence action runs through the shared sequence runner;
   8. tiles inside sections[].tiles are found (not just flat tiles),
-     and a preset with no activity fires without touching selects.
+     and a preset with no activity fires without touching selects;
+  9. a preset authored ON THE ACTIVITY (activities[id].presets — the
+     Studio's "preset · <activity>" card, the 0.87.0 beta report) is
+     found, and its owning activity is started first even though the
+     entry carries no `activity` of its own.
 """
 import asyncio
 import importlib.util
@@ -126,11 +130,28 @@ CONFIG = {
             "name": "Fernsehen", "room_view": "room",
             "start": "script.tv_on",
             "context": {"player": "media_player.philips_tv"}},
+        # the 0.87.0 beta report (2026-09-10): a preset authored ON THE
+        # ACTIVITY (Studio: the activity's Presets tab -> "preset ·
+        # <activity>") lives in activities[<id>].presets, not on any
+        # screen — run_preset said "no workspace has a preset tile"
+        "arbeitszimmer_musik_hoeren": {
+            "name": "Musik hören (Arbeitszimmer)", "room_view": "room",
+            "start": "sequence:music_on_az",
+            "presets": [
+                {"id": "tile_t6lv", "label": "Sunshine",
+                 "action": {"service": "music_assistant.play_media",
+                            "entity": "media_player.audio_arbeitszimmer",
+                            "data": {"media_id": "library://radio/9",
+                                     "media_type": "radio"}}},
+            ]},
     },
     "sequences": {
         "music_on": {"name": "Music on", "actions": [
             {"action": "media_player.turn_on",
              "data": {"entity_id": "media_player.audio_wohnzimmer"}}]},
+        "music_on_az": {"name": "Music on (AZ)", "actions": [
+            {"action": "media_player.turn_on",
+             "data": {"entity_id": "media_player.audio_arbeitszimmer"}}]},
         "surprise": {"name": "Surprise mix", "actions": [
             {"action": "media_player.shuffle_set",
              "data": {"entity_id": "media_player.audio_wohnzimmer"}}]},
@@ -343,6 +364,23 @@ RUN_LOG.clear()
 go(run_preset(Call(preset="tile_seq", workspace="main")))
 check("preset without an activity leaves selects alone",
       select.flips == [] and len(RUN_LOG) == 1)
+
+# ---- 9. activity-owned preset (activities[id].presets) --------------
+select.flips.clear()
+RUN_LOG.clear()
+hass.services.calls.clear()
+select.current_option = "off"
+err = boom(run_preset(Call(preset="tile_t6lv")))  # owner search, no ws
+check("activity-owned preset is found (no 'no workspace has' error)",
+      err is None)
+check("activity-owned preset starts ITS activity first",
+      select.flips == ["arbeitszimmer_musik_hoeren"]
+      and len(RUN_LOG) == 1 and RUN_LOG[0][1] == "Harmonium: Music on (AZ)")
+check("activity-owned preset fired with its own data and target",
+      hass.services.calls[-1][0] == "music_assistant.play_media"
+      and hass.services.calls[-1][1]["media_id"] == "library://radio/9"
+      and hass.services.calls[-1][2]
+      == {"entity_id": "media_player.audio_arbeitszimmer"})
 
 print(("\nrun-preset: FAIL " + str(fails)) if fails
       else "\nrun-preset: ALL PASS")

@@ -238,7 +238,8 @@ function tileWidthOf(cols, declared) {
 /* the CONTENT width a grid has to fill — the viewport less padding,
    or the declared cap, whichever is smaller */
 function usableWidth(maxW) {
-  const vw = (window.innerWidth || REF_W) - GRID_PAD;
+  const z = typeof deviceScale === "function" ? deviceScale() : 1;
+  const vw = (window.innerWidth || REF_W) / z - GRID_PAD;
   return maxW > 0 ? Math.min(maxW, vw) : vw;
 }
 function colsFor(cols, declaredTileW, usable) {
@@ -248,20 +249,34 @@ function colsFor(cols, declaredTileW, usable) {
   const n = Math.floor((u + GRID_GAP) / (tw + GRID_GAP));
   return Math.max(cols, Math.min(n, MAX_COLS));
 }
-/* SPAN IS A PROPORTION, NOT A COUNT (v0.68). `span: 2` was authored in
-   a 2-column world, where it plainly meant "the whole row" — 39 tiles
-   in the live config say so. Read literally at 5 columns it would mean
-   "two fifths", which nobody wrote. So a span scales: span N of a
-   declared C covers the same FRACTION of the real count, and N >= C
-   means full width at any size. span 1 is never scaled — an ordinary
-   tile is one column everywhere. */
+/* COLUMNS ON THE WALL (0.88): `wide_columns` on a page's grid or on a
+   section is an explicit count for wide panels — the author's own
+   number, no tile-size arithmetic. 0 when absent or on a compact
+   panel, so callers fall back to colsFor. Capped at 24: a wall of
+   ×1 tiles, not a spreadsheet. */
+const MAX_WIDE_COLS = 24;
+function wideColumnsOf(o) {
+  const n = o && +o.wide_columns;
+  if (!isWide() || !(n > 0)) return 0;
+  return Math.min(MAX_WIDE_COLS, Math.round(n));
+}
+/* SPAN IS A SIZE, EXCEPT "FULL" (0.88, tablet-layout.md §3 — Suresh:
+   "a 50% tile on a remote makes sense; on a 1920 tablet it looks
+   silly"). v0.68 read every span as a PROPORTION of the rendered
+   count: ×2 of a declared 4 became a fifth of ten columns at 1280 —
+   two tiles wide there, five at 1920, the billboard. Now: span N below
+   the declared count is N TILE COLUMNS at any size — a ×2 tile is two
+   tiles wide on the wall as on the remote. Span N >= the declared
+   count is FULL — the whole row, the one word that stretches, for the
+   hero and the Now Playing band (`span: 2` in a 2-column world, 39
+   tiles in the live config, still means "the whole row"). span 1 is
+   never scaled. On a compact panel nothing changes. */
 function spanOf(t, declaredCols, actualCols) {
   const n = +t.span;
   if (!(n >= 2)) return 1;
   if (!isWide() || actualCols === declaredCols) return Math.min(n, actualCols);
-  if (n >= declaredCols) return actualCols;              /* was full width */
-  return Math.max(2, Math.min(actualCols,
-    Math.round(n / declaredCols * actualCols)));
+  if (n >= declaredCols) return actualCols;              /* full width */
+  return Math.min(n, actualCols);                        /* N tile columns */
 }
 function makeTile(t, row, spanCols) {
   const el = document.createElement("div");

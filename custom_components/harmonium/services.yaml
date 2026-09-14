@@ -50,10 +50,47 @@ set_activity:
       example: watch_firetv
       selector:
         text:
+    start:
+      name: Start the activity
+      description: >-
+        Also run the activity's Start action (the same sequence a tap on
+        the remote runs). Off = flip the routing select only. With
+        activity "off", runs the ending activity's Stop action first.
+      required: false
+      default: false
+      selector:
+        boolean:
     workspace:
       name: Workspace
       description: >-
         Which workspace the activity lives in (defaults to main).
+      required: false
+      example: bedroom
+      selector:
+        text:
+
+run_preset:
+  name: Run preset
+  description: >-
+    Fire a preset exactly as a tap on its tile does: start the preset's
+    activity if it isn't already running, then run the preset's action.
+    Works for presets on a page, on a controller, or on an activity's
+    Presets tab. Generated favorites tiles can't be called this way.
+  fields:
+    preset:
+      name: Preset
+      description: >-
+        The preset's id — shown as ID on the preset card in Harmonium
+        Studio (Advanced tab on a page tile).
+      required: true
+      example: tile_t6lv
+      selector:
+        text:
+    workspace:
+      name: Workspace
+      description: >-
+        Which workspace the preset lives in. Leave empty to search every
+        workspace (required only if the same id exists in two).
       required: false
       example: bedroom
       selector:
